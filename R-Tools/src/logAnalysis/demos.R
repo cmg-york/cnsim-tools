@@ -1,14 +1,13 @@
 source("beliefAnalysis.R")
 
 
-
 #
 #
 # LOW RATE 1
 #
 #
 
-outputRelFolder = "../../examples/results/"
+outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
 experiment = "lowrate.5node.30sim - 2025.11.13 20.06.40"
 blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
 eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
@@ -16,21 +15,37 @@ beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",exp
   rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
 txVector = c(200,210,220,230,240,250,260,270.280,290)
 
-getTransactionHistory(eventData,blockData,txVector = c(210))
-lowrate1.plain = getBeliefGraph(beliefData, VaR=TRUE, timeUnit = "min",threshold = 0.8,txVector = txVector)
+
+#
+# Investigate transaction history for the txVector
+#
+getTransactionHistory(eventData,blockData,txVector = c(210), simVector = 5)
+
+
+#
+# Generate belief graph
+#
+lowrate1.plain = getBeliefGraph(beliefData, 
+                                timeUnit = "min",
+                                threshold = 0.8,
+                                alignTimes = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector),
+                                txVector = txVector)
 
 lowrate1.plain$graph
+redrawGraph(lowrate1.plain$data, 
+        faceted = TRUE, 
+        timeUnit = "min",
+        0, 40)
 
-lowrate1.band = getBeliefGraph(beliefData, boot=TRUE, R_Boot = 100, xlims = c(0,180))
-getFinality(beliefData, horizon = "19:29.050")
 
-
+getFinality(beliefData, alignTimes = TRUE, arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "19:00.000")
 lowrate1.plain = getBeliefGraph(beliefData, VaR=TRUE, timeUnit = "min",threshold = 0.8,txVector = txVector)
-lowrate1.boot = getBeliefGraph(beliefData, VaR=TRUE, boot=TRUE, R_Boot = 1000, timeUnit = "min",threshold = 0.8,txVector = txVector)
-lowrate1.plain$graph
 
 
-lowrate1.boot$VaRGraph
+#lowrate1.boot = getBeliefGraph(beliefData, VaR=TRUE, boot=TRUE, R_Boot = 1000, timeUnit = "min",threshold = 0.8,txVector = txVector)
+
 
 
 #
@@ -60,7 +75,7 @@ getFinality(beliefData,txVector = txVector)
 #
 #
 
-outputRelFolder = "../../examples/results/"
+outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
 experiment = "lowrate.5node.30sim.slownet - 2025.11.14 14.57.57"
 blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
 eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
@@ -73,9 +88,6 @@ lowrate2.plain$graph
 redrawGraph(lowrate2.plain$data,faceted = TRUE)
 
 
-# TODAY:
-
-# Create a separate CNSim tools
 
 # Redesign getFinality to take into account the entry of the Transaction
 getFinality(beliefData,txVector = txVector,horizon = "17:12")
