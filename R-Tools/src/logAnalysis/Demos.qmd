@@ -1,0 +1,108 @@
+---
+title: "Experimental Demonstrations"
+author: "Sotirios Liaskos"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+editor: visual
+---
+
+# Overview
+
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+source("beliefAnalysis.R")
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Cases
+
+## Low Rate I 
+
+### Data Load
+
+Manage TODOs
+
+
+In Java:
+- Fix column names
+- Fix genesis event reporting
+
+
+
+
+```{r}
+outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
+experiment = "lowrate.5node.30sim - 2025.11.13 20.06.40"
+blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
+eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
+beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
+  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
+
+txVector = c(200,210,220,230,240,250,260,270,280,290)
+```
+
+
+### Transaction History 
+```{R }
+getTransactionHistory(eventData,blockData,txVector = c(210), simVector = c(5,21))
+```
+
+### Belief Graphing
+
+```{R }
+lowrate1.plain.data = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+
+```{R }
+getBeliefGraph(lowrate1.plain.data)
+```
+
+```{R }
+getBeliefGraph(lowrate1.plain.data, xlim = c("-2:00","30:00"))
+```
+
+```{R }
+getBeliefGraph(lowrate1.plain.data, xlim = c("-2:00","30:00"), faceted = TRUE)
+```
+
+
+```{R }
+redrawGraph(lowrate1.plain.data,faceted = TRUE, timeUnit = "ms",xmin=0,xmax=1800000)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "19:00.000") 
+res %>% select(Transaction, point_estimate,ci_low,ci_high)
+
+```
+
+```{R }
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 5, color = "red") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+
+
+
+## Low Rate II
+
+```{}
