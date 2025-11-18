@@ -73,13 +73,17 @@ auto_time_to_ms <- function(x) {
   stop(paste("Unrecognized time format:", x))
 }
 
+#
+#
+#  M A I N   F U N C T I O N S 
+#
+#
 
 getTxArrivalTimes <- function(eventData,txVector) {
   return(eventData %>% 
     filter(EventType == "Event_NewTransactionArrival", Object %in% txVector) %>% 
     select(Simulation = SimID,Transaction = Object, Time = SimTime))
 }
-
 
 timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
   
@@ -91,27 +95,23 @@ timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
     rlang::abort("Argument `arrivalTimes` is required and was not supplied.")
   }
   
-  beliefData %>% 
+  
+  augData <- beliefData %>% 
     inner_join(arrivalTimes, by = c("Simulation", "Transaction"),
                suffix = c("", "_arrival"))  %>%
     filter(Time > Time_arrival)
   
-  return (beliefData %>%
+  return (augData %>%
     group_by(Simulation, Transaction) %>%
     mutate(Time = (Time - min(Time) + offset)) %>%
     ungroup())
 }
 
-
-
-prepareBeliefGraphData <- function(beliefData, 
-                          VaR = FALSE,
-                          boot = FALSE, R_Boot = 10000,
-                          xlims,
-                          alignTimes = FALSE,
-                          timeAlignmentOffset = 0,
-                          arrivalTimes
-) {
+prepareGraphData <- function(beliefData, VaR = FALSE, 
+                             boot = FALSE, R_Boot = 10000, 
+                             alignTimes = FALSE, 
+                             timeAlignmentOffset = 0,
+                             arrivalTimes) {
   
   if (nrow(beliefData) == 0) {
     rlang::abort("beliefData does not contain rows. Are txList transactions included in the set?")
@@ -124,26 +124,31 @@ prepareBeliefGraphData <- function(beliefData,
       beliefData <- timeAlignBeliefData(beliefData, arrivalTimes, timeAlignmentOffset) 
     }
   }
-
+  
   
   # Bounding dataset 
   print(paste0("[",as.character(sys.call(0)[[1]]),"]: Calculating time span."))
-  endTime = min(beliefData %>% group_by(Simulation) %>% summarise(maxTime = max(Time)) %>% select(maxTime))
+  endTime = min(beliefData %>% group_by(Simulation) %>% summarise(maxTime = max(Time),.groups = "drop") %>% select(maxTime))
   net = beliefData %>% filter(Time<=endTime)
 
   print(paste0("[",as.character(sys.call(0)[[1]]),"]: Grouping by Simulation ID."))  
   if (boot) {
-    
     print(paste0("[",as.character(sys.call(0)[[1]]),"]: Bootstrapping enabled."))  
     if (VaR) {
       confs = net %>% group_by(Time,Transaction) %>%
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief)) %>% 
+        summarise(avgConf = mean(Belief), 
+                  sdConf = sd(Belief), 
+                  medConf = median(Belief),
+                  .groups = "drop") %>% 
         mutate(
           lwr = boot.lower(avgConf,mean,R_Boot),upr = boot.upper(avgConf,mean,R_Boot),
-          VaR = quantile(avgConf,0.05))
+          VaR = quantile(avgConf,0.05, type = 7))
     } else {
       confs = net %>% group_by(Time,Transaction) %>% 
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief)) %>%
+        summarise(avgConf = mean(Belief), 
+                  sdConf = sd(Belief), 
+                  medConf = median(Belief),
+                  .groups = "drop") %>%
         mutate(
           lwr = boot.lower(avgConf,mean,R_Boot),upr = boot.upper(avgConf,mean,R_Boot))
     }
@@ -152,32 +157,33 @@ prepareBeliefGraphData <- function(beliefData,
     
     if (VaR) {
       confs = net %>% group_by(Time,Transaction) %>%
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief)) %>% 
+        summarise(avgConf = mean(Belief), 
+                  sdConf = sd(Belief), 
+                  medConf = median(Belief),
+                  .groups = "drop") %>% 
         mutate(
           VaR = quantile(avgConf,0.05))
     } else {
       confs = net %>% group_by(Time,Transaction) %>%
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief))
+        summarise(avgConf = mean(Belief), 
+                  sdConf = sd(Belief), 
+                  medConf = median(Belief),
+                  .groups = "drop")
     }
 
   }
   
   print(paste0("[",as.character(sys.call(0)[[1]]),"]: Preparing dataset."))
-  confs2plot <- confs %>% mutate(Transaction = as.factor(Transaction)) %>%
+  confs2plot <- confs %>% 
+    mutate(Transaction = as.factor(Transaction)) %>%
     mutate(Time = Time)
   
   return(confs2plot) 
   
 }
 
-gr =  prepareBeliefGraphData(beliefData, VaR = TRUE, boot = TRUE, R_Boot = 5)
-
-
-getBeliefGraph <- function(graphData, 
-               threshold,
-               xlims,
-               timeUnit = "min",
-               txVector) {
+getBeliefGraph <- function(graphData,threshold, faceted = FALSE,
+                           xlims,timeUnit = "min",txVector) {
   
   
   # Parameter Processing and Validation
@@ -210,11 +216,23 @@ getBeliefGraph <- function(graphData,
   
   
   print(paste0("[",as.character(sys.call(0)[[1]]),"]: Producing graph."))
-  p1 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
-    geom_line(aes(color = Transaction)) + 
-    ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
-    xlim(xlim_min,xlim_max) +
-    ggtitle(label = "Confidence in f over time")
+  
+  if (faceted) {
+    p1 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
+      geom_line() + 
+      facet_wrap(~ Transaction, scales = "free_y") +
+      ylab("Confidence") + 
+      xlab(paste0("Time (",timeUnit,")")) +
+      xlim(xlim_min,xlim_max) +
+      ggtitle(label = "Confidence in f over time")
+  } else {
+    p1 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
+      geom_line(aes(color = Transaction)) + 
+      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
+      xlim(xlim_min,xlim_max) +
+      ggtitle(label = "Confidence in f over time")
+  }
+  
   
   if (!missing(threshold)) {
     p1 = p1 + geom_hline(yintercept = threshold)
@@ -240,7 +258,7 @@ getBeliefGraph <- function(graphData,
     }
     return(list(txGraph = p1, bootGraph = p2)) 
   } else {
-    return(graph = p) 
+    return(graph = p1) 
   }
 }
 
@@ -253,6 +271,8 @@ getFinality <- function(
     arrivalTimes,
     timeAlignmentOffset = 0,
     threshold = 0.9,
+    thresTest_p = 0.95,
+    alpha = 0.05,
     txVector) {
   
   
@@ -278,29 +298,34 @@ getFinality <- function(
     filter(Time <= horizon) %>%
     
     # Step 2: for each Transaction, find the maximum Time
-    group_by(Transaction) %>%
+    group_by(Simulation,Transaction) %>%
     filter(Time == max(Time)) %>%
-    
+    group_by(Transaction) %>%
     # Step 3: calculate mean Belief over simulations for that Transaction × Time
     summarise(
       Time_ms = first(Time),                    # the max time
       sampleMean = mean(Belief, na.rm = TRUE),
       sampleSD = sd(Belief, na.rm = TRUE),
-      #sampleFinal = (sampleMean>=threshold),
       n = n(),
-      n_above = sum(Belief > threshold),
-      test = list(binom.test(n_above,n,p=0.95,alternative = "greater")),
+      n_above = sum(Belief >= threshold),
+      thres_test = list(binom.test(n_above,n,p=thresTest_p,alternative = "greater")),
+      test = list(binom.test(n_above,n)),
       .groups = "drop"
     ) %>% 
-    
     mutate(Time = format_simtime(Time_ms), 
-           binom_p_val = test[[1]]$p.value,
-           confIntLow = test[[1]]$conf.int[1],
-           confIntHigh = test[[1]]$conf.int[2],
-           popFinal = (binom_p_val <= 0.05)) %>% 
+           threstest_p_val = thres_test[[1]]$p.value,
+           threstest_confIntLow = thres_test[[1]]$conf.int[1],
+           threstest_confIntHigh = thres_test[[1]]$conf.int[2],
+           threstest_Final = (threstest_p_val <= alpha),
+           point_estimate = test[[1]]$estimate,
+           ci_low = test[[1]]$conf.int[1],
+           ci_high = test[[1]]$conf.int[2]
+           ) %>% 
     select(Transaction, Time, Time_ms,
            sampleMean, sampleSD,
-           binom_p_val, confIntLow, confIntHigh, popFinal)
+           threstest_p_val, threstest_confIntLow, threstest_confIntHigh, threstest_Final,
+           point_estimate,ci_low,ci_high
+           )
   
   if (missing(txVector)) {
     return(result)
