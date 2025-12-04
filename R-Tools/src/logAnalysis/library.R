@@ -110,7 +110,7 @@ getRunTime <- function(dataFolder,experiment) {
   runTimes <- read_csv(paste0(dataFolder,experiment,"/EventLog - ",experiment,".csv")) %>% 
     group_by(SimID) %>% summarise(
       sysTime = as.integer(max(SysTime) - min(SysTime)),
-      sysTime_f = format_simtime(sysTime))
+      sysTime_formated = format_simtime(sysTime))
   return(runTimes)
 }
 

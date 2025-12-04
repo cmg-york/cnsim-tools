@@ -89,6 +89,27 @@ TOSTone.raw(
 ```
 
 
+### Execution Times
+```{R }
+runTimes.10 <- rbind(
+  getRunTime(folder.10, df_10Node_1),
+  getRunTime(folder.10, df_10Node_2),
+  getRunTime(folder.10, df_10Node_3),
+  getRunTime(folder.10, df_10Node_4),
+  getRunTime(folder.10, df_10Node_5),
+  getRunTime(folder.10, df_10Node_6)
+  )
+runTimes.10
+```
+
+
+
+
+```{R }
+runTimes.10 %>% summarise(`Run Time (mean)` = format_simtime(as.integer(mean(sysTime))), 
+                       `Run Time (sd)` =  format_simtime(as.integer(sd(sysTime))))
+```
+
 
 ## 30 Node - Lowrate
 
@@ -97,15 +118,15 @@ TOSTone.raw(
 ```{R }
 folder.30 = "../../../../cnsim-bitcoin/examples/results/lowrate/"  
 
-df_30Node_1 = "lowrate.30node.100sim.1-20 - 2025.12.03 21.52.19"
+df_30Node_1 = "lowrate.30node.100sim.1-20 - 2025.12.03 22.39.47"
 producePaceData(folder.30, df_30Node_1)
-df_30Node_2 = "lowrate.30node.100sim.21-40 - 2025.12.03 21.52.28"
+df_30Node_2 = "lowrate.30node.100sim.21-40 - 2025.12.03 22.39.51"
 producePaceData(folder.30, df_30Node_2)
-df_30Node_3 = "lowrate.30node.100sim.41-60 - 2025.12.03 21.52.34"
+df_30Node_3 = "lowrate.30node.100sim.41-60 - 2025.12.03 22.39.55"
 producePaceData(folder.30, df_30Node_3)
-df_30Node_4 = "lowrate.30node.100sim.61-80 - 2025.12.03 21.52.40"
+df_30Node_4 = "lowrate.30node.100sim.61-80 - 2025.12.03 22.39.58"
 producePaceData(folder.30, df_30Node_4)
-df_30Node_5 = "lowrate.30node.100sim.81-100 - 2025.12.03 21.53.37"
+df_30Node_5 = "lowrate.30node.100sim.81-100 - 2025.12.03 22.40.02"
 producePaceData(folder.30, df_30Node_5)
 ```
 
@@ -144,3 +165,19 @@ TOSTone.raw(
   alpha = 0.05)
 ```
 
+### Execution Times
+```{R }
+runTimes.30 <- rbind(
+  getRunTime(folder.30, df_30Node_1),
+  getRunTime(folder.30, df_30Node_2),
+  getRunTime(folder.30, df_30Node_3),
+  getRunTime(folder.30, df_30Node_4),
+  getRunTime(folder.30, df_30Node_5)
+  )
+runTimes.30
+```
+
+```{R }
+runTimes.30 %>% summarise(`Run Time (mean)` = format_simtime(as.integer(mean(sysTime))), 
+                       `Run Time (sd)` =  format_simtime(as.integer(sd(sysTime))))
+```
