@@ -1,6 +1,7 @@
 library(tidyverse)
 library(nptest)
-
+library(knitr)
+library(TOSTER)
 
 
 #
@@ -72,6 +73,48 @@ auto_time_to_ms <- function(x) {
   
   stop(paste("Unrecognized time format:", x))
 }
+
+
+
+
+
+#
+#
+# PACE ANALYSIS
+#
+#
+
+
+producePaceData <- function(dataFolder,experiment){
+  pacedata <- read_csv(paste0(dataFolder,experiment,"/EventLog - ",experiment,".csv")) %>% 
+    filter(EventType == "Event_ContainerValidation") %>%
+    arrange(SimID, SimTime) %>%
+    group_by(SimID) %>%
+    mutate(SimDiff = SimTime - lag(SimTime, default = 0)) %>%  # use 0 for first lag
+    ungroup() %>%
+    select(SimID, SimDiff)
+  
+  write_csv(pacedata,paste0(dataFolder,experiment,"/PaceData - ",experiment,".csv"))
+}
+
+
+
+
+#
+#
+# SIMULATION PERFORMANCE
+#
+#
+
+getRunTime <- function(dataFolder,experiment) {
+  runTimes <- read_csv(paste0(dataFolder,experiment,"/EventLog - ",experiment,".csv")) %>% 
+    group_by(SimID) %>% summarise(
+      sysTime = as.integer(max(SysTime) - min(SysTime)),
+      sysTime_f = format_simtime(sysTime))
+  return(runTimes)
+}
+
+
 
 #
 #
@@ -307,7 +350,6 @@ getFinality <- function(
       sampleMean = mean(Belief, na.rm = TRUE),
       sampleSD = sd(Belief, na.rm = TRUE),
       n = n(),
-      n_above = sum(Belief >= threshold),
       thres_test = list(binom.test(n_above,n,p=thresTest_p,alternative = "greater")),
       test = list(binom.test(n_above,n)),
       .groups = "drop"
@@ -334,7 +376,6 @@ getFinality <- function(
   }
   
 }
-
 
 
 getTransactionHistory <- function(
@@ -435,251 +476,3 @@ getTransactionHistory <- function(
 }
 
 
-
-
-
-
-getBeliefGraph(gr,0.9,timeUnit = "min",xlims = c(0,"20:90.000"))$txGraph
-
-
-#
-#
-# D E P R E C A T E D
-#
-#
-
-getBeliefGraphOLD <- function(beliefData, 
-                           VaR = FALSE,
-                           boot = FALSE, R_Boot = 10000,
-                           threshold,
-                           xlims,
-                           timeUnit = "min",
-                           alignTimes = FALSE,
-                           timeAlignmentOffset = 0,
-                           arrivalTimes,
-                           txVector
-) {
-  
-  
-  # Parameter Processing and Validation
-  
-  if (!(timeUnit %in% c("min","sec","ms"))) {
-    rlang::abort(paste0("timeUnit '",timeUnit, "' not recognized."))
-  }
-  
-  timeDivider <- switch(timeUnit, min = 60000, sec = 1000, ms = 1)
-  
-  if (missing(xlims)){
-    xlim_min = 0
-    xlim_max = ceiling(endTime/timeDivider)
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: x axis bounds set to (",xlim_min,",",xlim_max,") ", timeUnit))
-  } else {
-    xlim_min = xlims[1]
-    xlim_max = xlims[2]
-  }
-  
-  if (!missing(txVector)) {
-    beliefData <- beliefData %>% filter(Transaction %in% txVector)
-  }
-  
-  if (nrow(beliefData) == 0) {
-    rlang::abort("beliefData does not contain rows. Are txList transactions included in the set?")
-  }
-  
-  if (alignTimes) {
-    if (missing(arrivalTimes)) {
-      rlang::abort("For timeAlign = TRUE, argument `arrivalTimes` is required and was not supplied.")
-    } else {
-      beliefData <- timeAlignBeliefData(beliefData, arrivalTimes, timeAlignmentOffset) 
-    }
-  }
-  
-  
-  # Bounding dataset 
-  
-  print(paste0("[",as.character(sys.call(0)[[1]]),"]: Calculating time span."))
-  endTime = min(beliefData %>% group_by(Simulation) %>% summarise(maxTime = max(Time)) %>% select(maxTime))
-  net = beliefData %>% filter(Time<=endTime)
-  
-  if (boot) {
-    
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Grouping by Simulation ID. Bootstraping for confidence band."))
-    confs = net %>% group_by(Time,Transaction) %>% 
-      summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief)) %>%
-      mutate(
-        lwr = boot.lower(avgConf,mean,R_Boot),upr = boot.upper(avgConf,mean,R_Boot),
-        VaR = quantile(avgConf,0.05))
-    
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Preparing dataset."))
-    confs2plot <- confs %>% mutate(Transaction = as.factor(Transaction)) %>%
-      mutate(Time = Time / timeDivider)
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Producing graph."))
-    p1 <- ggplot(data = confs2plot, aes(x = Time, y=avgConf, label = avgConf)) + 
-      geom_line(aes(color = Transaction)) + 
-      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
-      xlim(xlim_min,xlim_max) +
-      ggtitle(label = "Confidence in f over time")
-    
-    if (!missing(threshold)) {
-      p1 = p1 + geom_hline(yintercept = threshold)
-    }
-    
-    p2 <- ggplot(data = confs2plot, aes(x = Time, y=avgConf, label = avgConf)) + 
-      geom_line(aes(y = VaR, color = "VaR")) + 
-      geom_ribbon(aes(ymin=lwr,ymax=upr,fill = "Confidence Interval"),alpha=0.1) + 
-      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
-      xlim(xlim_min,xlim_max) +
-      ggtitle(label = "Confidence in f over time") +
-      scale_color_manual(name = "Legend", values = c("VaR" = "red")) +
-      scale_fill_manual(name = "Legend", values = c("Confidence interval" = "lightblue"))
-    
-    
-    
-    p2 <- ggplot(data = confs2plot, aes(x = Time)) +
-      # Ribbon for the confidence interval
-      geom_ribbon(
-        aes(ymin = lwr, ymax = upr, fill = "Confidence interval"),
-        alpha = 0.2
-      ) +
-      
-      # Line for VaR
-      geom_line(
-        aes(y = VaR, color = "VaR"),
-        linewidth = 1
-      ) +
-      
-      # Axis labels and title
-      ylab("Confidence") +
-      xlab(paste0("Time (", timeUnit, ")")) +
-      xlim(xlim_min, xlim_max) +
-      ggtitle("Confidence in f over time") +
-      
-      # Manual color and fill scales — *names must match* the strings in aes()
-      scale_color_manual(
-        name   = "Legend",
-        values = c("VaR" = "red")
-      ) +
-      scale_fill_manual(
-        name   = "Legend",
-        values = c("Confidence interval" = "blue")
-      )
-    
-    
-    if (!missing(threshold)) {
-      p2 = p2 + geom_hline(yintercept = threshold)
-    }
-    
-    return(list(txGraph = p1, VaRGraph = p2, data = confs2plot)) 
-    
-  } else {
-    
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Grouping by Simulation ID"))
-    
-    if (VaR) {
-      confs = net %>% group_by(Time,Transaction) %>%
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief)) %>% 
-        mutate(
-        VaR = quantile(avgConf,0.05))
-    } else {
-      confs = net %>% group_by(Time,Transaction) %>%
-        summarise(avgConf = mean(Belief), sd = sd(Belief), medConf = median(Belief))
-    }
-    
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Preparing dataset."))
-    confs2plot <- confs %>% mutate(Transaction = as.factor(Transaction)) %>%
-      mutate(Time = Time / timeDivider)
-    
-    print(paste0("[",as.character(sys.call(0)[[1]]),"]: Producing graph."))
-    p <- ggplot(data = confs2plot, aes(x = Time, y=avgConf)) + 
-      geom_line(aes(color = Transaction)) + 
-      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
-      ggtitle(label = "Confidence in f over time") + 
-      xlim(xlim_min,xlim_max)
-    
-    if (VaR) {
-      p <- p + geom_line(
-        aes(y = VaR, color = "VaR"),
-        linewidth = 1
-      ) + 
-        # Legend titles
-        scale_color_discrete(name = "Transaction") +
-        scale_linetype_manual(
-          name = "Reference",
-          values = c("VaR" = "solid")
-        )
-    }
-
-    
-    
-    if (!missing(threshold)) {
-      p = p + geom_hline(yintercept = threshold)
-    }
-    return(list(graph = p, data = confs2plot %>% mutate(Time = Time*timeDivider))) 
-  }
-}
-
-
-
-redrawGrapOLD <- function(data, 
-                        faceted = FALSE,
-                        timeUnit,
-                        xmin, xmax) {
-  
-  if (missing(xmin)) {
-    xmin = min(data$Time)
-  }
-  
-  if (missing(xmax)) {
-    xmax = max(data$Time)
-  }
-  
-  if (!(timeUnit %in% c("min","sec","ms"))) {
-    rlang::abort(paste0("timeUnit '",timeUnit, "' not recognized."))
-  }
-
-  timeDivider <- switch(timeUnit, min = 60000, sec = 1000, ms = 1)
-  
-  if (faceted) {
-    ggplot(data, aes(x = Time/timeDivider, y = avgConf)) +
-      geom_line() +
-      facet_wrap(~ Transaction, scales = "free_y") +
-      ylab("Confidence") +
-      xlab(paste0("Time (", timeUnit, ")")) +
-      ggtitle("Confidence in f over time") +
-      xlim(xmin,xmax)
-  } else {
-    ggplot(data = data, aes(x = Time/timeDivider, y=avgConf)) + 
-      geom_line(aes(color = Transaction)) + 
-      ylab("Confidence") + 
-      xlab(paste0("Time (",timeUnit,")")) + 
-      ggtitle(label = "Confidence in f over time")+
-      xlim(xmin,xmax)
-  }
-}
-
-
-
-
-#
-# A D V A N C E D
-#
-
-
-#Aggregate over simulations
-# confs = net %>% group_by(Time,Transaction) %>% 
-#   summarise(avgConf = mean(conf), sd = sd(conf), medConf = median(conf), 
-#             lwr = boot.lower(conf,mean,Bootstrap_R),upr = boot.upper(conf,mean,Bootstrap_R),
-#             VaR = quantile(conf,0.05))
-# 
-# confs2plot <- confs %>% mutate(Condition = as.factor(Transaction))
-# 
-# 
-# ggplot(data = confs2plot, aes(x = Time, y=avgConf)) + 
-#   geom_line(aes(color = Condition)) + 
-#   geom_ribbon(aes(ymin=lwr,ymax=upr,fill = Condition),alpha=0.1) + 
-#   ylab("Confidence") +
-#   ggtitle(label = "Confidence in f over time (mean and 95% CI)") + 
-#   geom_hline(yintercept = 0.8)
-# 
-# 
-# View(confs2plot)

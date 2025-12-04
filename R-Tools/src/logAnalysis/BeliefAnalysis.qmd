@@ -12,7 +12,7 @@ editor: visual
 # Overview
 
 ```{r echo = FALSE, warning=FALSE, message=FALSE}
-source("beliefAnalysis.R")
+source("library.R")
 knitr::opts_chunk$set(
   warning = FALSE,
   message = FALSE
@@ -21,19 +21,9 @@ knitr::opts_chunk$set(
 
 # Cases
 
-## Low Rate I 
+## Low Rate I
 
 ### Data Load
-
-Manage TODOs
-
-
-In Java:
-- Fix column names
-- Fix genesis event reporting
-
-
-
 
 ```{r}
 outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
@@ -46,8 +36,8 @@ beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",exp
 txVector = c(200,210,220,230,240,250,260,270,280,290)
 ```
 
+### Transaction History
 
-### Transaction History 
 ```{R }
 getTransactionHistory(eventData,blockData,txVector = c(210), simVector = c(5,21))
 ```
@@ -60,7 +50,6 @@ lowrate1.plain.data = prepareGraphData(beliefData,
                                 arrivalTimes = getTxArrivalTimes(eventData,txVector))
 ```
 
-
 ```{R }
 getBeliefGraph(lowrate1.plain.data)
 ```
@@ -72,7 +61,6 @@ getBeliefGraph(lowrate1.plain.data, xlim = c("-2:00","30:00"))
 ```{R }
 getBeliefGraph(lowrate1.plain.data, xlim = c("-2:00","30:00"), faceted = TRUE)
 ```
-
 
 ```{R }
 redrawGraph(lowrate1.plain.data,faceted = TRUE, timeUnit = "ms",xmin=0,xmax=1800000)
@@ -100,9 +88,6 @@ ggplot(res, aes(x = Transaction, y = point_estimate)) +
   theme_minimal()
 ```
 
-
-
-
 ## Low Rate II
 
-```{}
+\`\`\`{}
