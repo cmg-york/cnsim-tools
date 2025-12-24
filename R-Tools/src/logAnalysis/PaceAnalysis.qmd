@@ -22,12 +22,12 @@ knitr::opts_chunk$set(
 # Cases
 
 ## Authoritative Pace and Bounds
+
 ```{R }
 auth = 8.521
 low_eqbound = -1.5
 high_eqbound = 1.5
 ```
-
 
 ## 10 Node - Faithful
 
@@ -70,8 +70,8 @@ pace.10 = pacedata.10 %>%
 t(pace.10)
 ```
 
-
 ### Equivalence Test
+
 ```{R }
 # Turn them to minutes
 distances.10 = pacedata.10$SimDiff/60000
@@ -88,8 +88,8 @@ TOSTone.raw(
 
 ```
 
-
 ### Execution Times
+
 ```{R }
 runTimes.10 <- rbind(
   getRunTime(folder.10, df_10Node_1),
@@ -102,14 +102,10 @@ runTimes.10 <- rbind(
 runTimes.10
 ```
 
-
-
-
 ```{R }
 runTimes.10 %>% summarise(`Run Time (mean)` = format_simtime(as.integer(mean(sysTime))), 
                        `Run Time (sd)` =  format_simtime(as.integer(sd(sysTime))))
 ```
-
 
 ## 30 Node - Lowrate
 
@@ -148,8 +144,8 @@ pace.30 = pacedata.30 %>%
 t(pace.30)
 ```
 
-
 ### Equivalence Test
+
 ```{R }
 # Turn them to minutes
 distances.30 = pacedata.30$SimDiff/60000
@@ -166,6 +162,7 @@ TOSTone.raw(
 ```
 
 ### Execution Times
+
 ```{R }
 runTimes.30 <- rbind(
   getRunTime(folder.30, df_30Node_1),

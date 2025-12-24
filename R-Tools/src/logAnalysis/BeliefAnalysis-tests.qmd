@@ -1,0 +1,410 @@
+---
+title: "Experimental Demonstrations - Tests"
+author: "Sotirios Liaskos"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+editor: visual
+---
+
+# Overview
+
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+source("library.R")
+library("gridExtra")
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+setVars <- function(outputFolder,experiment,txs) {
+  blockData <<- read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
+  eventData <<- read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
+  beliefData <<- read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
+  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
+  producePaceData(outputRelFolder,experiment)
+  txVector <<- c(5,6,7,8,9)
+}
+```
+
+# Cases {.tabset}
+
+## Simple normal
+
+### Data Load
+
+```{r}
+setVars("../../../../cnsim-bitcoin/examples/results/","test.normal - 2025.12.21 14.21.19",c(5,6,7,8,9))
+```
+
+### Pace Analysis
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Belief Graphing
+
+```{R }
+test.plain.data = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+```{R }
+getBeliefGraph(test.plain.data, xlim = c("0:00","5:00"),threshold = 0.9)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+```
+
+```{R }
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(test.plain.data, 0.9)
+```
+
+### Transaction History
+
+```{R eval = FALSE, echo = FALSE}
+getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
+```
+
+
+
+
+
+
+
+
+
+
+
+## Workload with a Conflict 
+
+### Data Load
+
+```{r}
+setVars("../../../../cnsim-bitcoin/examples/results/","test.conflict - 2025.12.21 14.32.47",c(5,6,7,8,9))
+```
+
+### Pace Analysis
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Belief Graphing
+
+```{R }
+test.plain.data = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+```{R }
+grid.arrange(
+  getBeliefGraph(test.plain.data, xlim = c("0:00","4:00"),threshold = 0.9, VaR = "exclude"),
+  getBeliefGraph(test.plain.data, xlim = c("0:00","4:00"),threshold = 0.9, VaR = "only"), ncol = 1
+)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+```
+
+```{R }
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(test.plain.data, 0.9)
+```
+
+### Transaction History
+
+```{R eval = FALSE, echo = FALSE}
+getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
+```
+
+
+
+
+
+
+## Setting with restricted block size 
+
+### Data Load
+
+```{r}
+setVars("../../../../cnsim-bitcoin/examples/results/","test.size - 2025.12.21 18.25.51", c(5,6,7,8,9))
+```
+
+### Pace Analysis
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Belief Graphing
+
+```{R }
+graphData = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+Transaction 9 has low value but not small size.
+
+```{R }
+grid.arrange(
+  getBeliefGraph(graphData, xlim = c("0:00","30:00"),threshold = 0.9, VaR = "exclude"),
+  getBeliefGraph(graphData, xlim = c("0:00","30:00"),threshold = 0.9, VaR = "only"), ncol = 1
+)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+```
+
+```{R }
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(test.plain.data, 0.9)
+```
+
+### Transaction History
+
+```{R eval = FALSE, echo = FALSE}
+getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+## Increased transaction sizes with a conflict and different values
+
+[Describe this experiment]
+
+### Data Load
+
+```{r}
+outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
+experiment = "test.txValue - 2025.12.17 20.34.52"
+blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
+eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
+beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
+  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
+
+txVector = c(5,6,7,8,9,10,11)
+```
+
+### Transaction History
+
+```{R eval = FALSE, echo = FALSE}
+getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
+```
+
+### Belief Graphing
+
+```{R }
+test.plain.txSize.data = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+```{R eval = FALSE, echo = FALSE}
+getBeliefGraph(test.plain.txSize.data)
+```
+
+```{R }
+getBeliefGraph(test.plain.txSize.data, xlim = c("-1:00","15:00"),threshold = 0.9)
+```
+
+
+
+
+```{R }
+#redrawGraph(lowrate1.plain.data,faceted = TRUE, timeUnit = "ms",xmin=0,xmax=1800000)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+
+```
+
+```{R echo = FALSE}
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+res = getCulpritSims(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "90:00.000")
+res
+
+getTransactionHistory(eventData, blockData, c(6),c(28))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Attack
+
+[Describe this experiment]
+
+### Data Load
+
+```{r}
+outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
+experiment = "test.txValue - 2025.12.21 12.29.23"
+blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
+eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
+beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
+  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
+
+txVector = c(5,6,7,8,9)
+```
+
+
+### Belief Graphing
+
+```{R }
+test.attack.txSize.data = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+```{R eval = FALSE, echo = FALSE}
+getBeliefGraph(test.attack.txSize.data)
+```
+
+```{R }
+getBeliefGraph(test.attack.txSize.data, xlim = c("-1:00","15:00"),threshold = 0.9)
+```
+
+
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+
+```
+
+```{R echo = FALSE}
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+res = getCulpritSims(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "90:00.000")
+res
+
+getTransactionHistory(eventData, blockData, c(6),c(28))
+
+```
+
+
+
+

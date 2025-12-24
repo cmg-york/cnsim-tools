@@ -98,6 +98,30 @@ producePaceData <- function(dataFolder,experiment){
 }
 
 
+paceInfo <- function(dataFolder,experiment) {
+  
+  # Ensure experiment is a character vector
+  experiment <- unlist(experiment)
+  
+  
+  # Read and merge all CSV files
+  pacedata <- purrr::map_dfr(experiment, function(exp) {
+    readr::read_csv(
+      paste0(dataFolder, exp, "/PaceData - ", exp, ".csv")
+    )
+  })
+
+  pace = pacedata %>%
+  arrange(SimID, SimDiff) %>%             # ensure ordered
+  summarise(
+    `Block Time (mins) - Mean....:` = mean(SimDiff)/60000,
+    `Block Time (mins) - St. Dev.:`   = sd(SimDiff)/60000,
+    Samples = n()
+  )
+  
+  return(pace)
+}
+
 
 
 #
@@ -124,8 +148,8 @@ getRunTime <- function(dataFolder,experiment) {
 
 getTxArrivalTimes <- function(eventData,txVector) {
   return(eventData %>% 
-    filter(EventType == "Event_NewTransactionArrival", Object %in% txVector) %>% 
-    select(Simulation = SimID,Transaction = Object, Time = SimTime))
+    filter(EventType == "Event_NewTransactionArrival", ObjectID %in% txVector) %>% 
+    select(Simulation = SimID,Transaction = ObjectID, Time = SimTime))
 }
 
 timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
@@ -149,6 +173,8 @@ timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
     mutate(Time = (Time - min(Time) + offset)) %>%
     ungroup())
 }
+
+
 
 prepareGraphData <- function(beliefData, VaR = FALSE, 
                              boot = FALSE, R_Boot = 10000, 
@@ -199,13 +225,28 @@ prepareGraphData <- function(beliefData, VaR = FALSE,
   } else {
     
     if (VaR) {
-      confs = net %>% group_by(Time,Transaction) %>%
+      part1 = net %>% group_by(Time,Transaction) %>%
         summarise(avgConf = mean(Belief), 
                   sdConf = sd(Belief), 
                   medConf = median(Belief),
-                  .groups = "drop") %>% 
-        mutate(
-          VaR = quantile(avgConf,0.05))
+                  VaR = quantile(Belief, 0.05),
+                  .groups = "drop")  %>%
+        mutate(Transaction = as.factor(Transaction)) 
+      
+      part2 = part1 %>%
+        group_by(Time) %>%
+        summarise(
+          Transaction = "VaR",
+          avgConf     = min(VaR),
+          sdConf      = NA_real_,      # optional, can leave NA
+          medConf     = NA_real_,
+          .groups = "drop"
+        ) %>%
+        mutate(Transaction = as.factor(Transaction)) 
+      
+      confs <- bind_rows(part1, part2) %>%
+        arrange(Time, Transaction) %>% select(-VaR)
+      
     } else {
       confs = net %>% group_by(Time,Transaction) %>%
         summarise(avgConf = mean(Belief), 
@@ -225,13 +266,10 @@ prepareGraphData <- function(beliefData, VaR = FALSE,
   
 }
 
-getBeliefGraph <- function(graphData,threshold, faceted = FALSE,
+getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include",
                            xlims,timeUnit = "min",txVector) {
   
-  
   # Parameter Processing and Validation
-  
-  
   if (!(timeUnit %in% c("min","sec","ms"))) {
     rlang::abort(paste0("timeUnit '",timeUnit, "' not recognized."))
   }
@@ -257,7 +295,24 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE,
     rlang::abort("graphData does not contain rows or is missing.")
   }
   
+
+  if (!missing("VaR")) {
+    
+    if (!(VaR %in% c("include","exclude","only"))) {
+      rlang::abort("Uknown value for paramter VaR. Choose one of 'include','exclude','only'")  
+    }
+    
+    if (VaR == "exclude") {
+      graphData <- graphData %>% filter(Transaction != "VaR")
+    }
+    if (VaR == "only"){
+      graphData <- graphData %>% filter(Transaction == "VaR")
+    }
+  }
   
+    
+  # Get existing levels
+
   print(paste0("[",as.character(sys.call(0)[[1]]),"]: Producing graph."))
   
   if (faceted) {
@@ -278,11 +333,20 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE,
   
   
   if (!missing(threshold)) {
-    p1 = p1 + geom_hline(yintercept = threshold)
+    p1 = p1 + geom_hline(yintercept = threshold) +   
+      annotate(
+      "text",
+      x = xlim_min,
+      y = threshold,
+      label = "Belief threshold",
+      vjust = -0.5,
+      hjust = 0,                  # flush left
+      color = "darkred"
+    )
   }
   
   if (rlang::has_name(graphData,"VaR")) {
-    p1 = p1 + geom_line(aes(y = VaR, color = "VaR"))
+    p1 = p1 + geom_line(aes(y = VaR, color = "VaR"), linetype="dashed")
   }
   
   if (rlang::has_name(graphData,"lwr")) {
@@ -292,7 +356,7 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE,
       xlim(xlim_min,xlim_max) +
       ggtitle(label = "Confidence in f over time") +
       scale_color_manual(name = "Legend", values = c("VaR" = "red")) +
-      scale_fill_manual(name = "Legend", values = c("Confidence interval" = "blue"))
+      scale_fill_manual(name = "Legend", values = c("Confidence interval" = "blue")) + 
     if (!missing(threshold)) {
       p2 = p2 + geom_hline(yintercept = threshold)
     }
@@ -317,6 +381,98 @@ getFinality <- function(
     thresTest_p = 0.95,
     alpha = 0.05,
     txVector) {
+
+  
+  if (alignTimes) {
+    if (missing(arrivalTimes)) {
+      rlang::abort("For timeAlign = TRUE, argument `arrivalTimes` is required and was not supplied.")
+    } else {
+      beliefData <- timeAlignBeliefData(beliefData, arrivalTimes, timeAlignmentOffset) 
+    }
+  }
+  
+  
+  h = max(beliefData$Time)
+  if (missing(horizon) || (auto_time_to_ms(horizon) > h)) {
+    horizon = h
+  } else {
+    horizon = auto_time_to_ms(horizon)
+  }
+  
+
+  
+  
+  result <- beliefData %>%
+    # Step 1: keep only times <= horizon
+    filter(Time <= horizon) %>%
+    
+    # Step 2: for each Transaction, find the maximum Time
+    group_by(Simulation,Transaction) %>%
+    filter(Time == max(Time)) %>%
+    group_by(Transaction) %>%
+    # Step 3: calculate mean Belief over simulations for that Transaction × Time
+    summarise(
+      Time_ms = first(Time),                    # the max time
+      sampleMean = mean(Belief, na.rm = TRUE),
+      sampleSD = sd(Belief, na.rm = TRUE),
+      n = n(),
+      n_above = sum(Belief > threshold, na.rm = TRUE),
+      #thres_test = list(binom.test(n_above,n,p=thresTest_p,alternative = "greater")),
+      #test = list(binom.test(n_above,n)),
+      .groups = "drop"
+    ) %>% 
+    mutate(
+      thres_test = map2(n_above, n,
+                        ~ binom.test(.x, .y, p = thresTest_p, alternative = "greater")),
+      test       = map2(n_above, n,
+                        ~ binom.test(.x, .y))
+    ) %>% 
+    mutate(Time = format_simtime(Time_ms), 
+           threstest_p_val      = map_dbl(thres_test, ~ .x$p.value),
+           threstest_confIntLow = map_dbl(thres_test, ~ .x$conf.int[1]),
+           threstest_confIntHigh= map_dbl(thres_test, ~ .x$conf.int[2]),
+           threstest_Final      = threstest_p_val <= alpha,
+           point_estimate       = map_dbl(test, ~ .x$estimate),
+           ci_low               = map_dbl(test, ~ .x$conf.int[1]),
+           ci_high              = map_dbl(test, ~ .x$conf.int[2])
+           ) %>% 
+    select(Transaction, Time, Time_ms,
+           sampleMean, sampleSD,
+           trials = n,
+           successes = n_above,
+           threstest_p_val, threstest_confIntLow, threstest_confIntHigh, threstest_Final,
+           point_estimate,ci_low,ci_high
+           )
+  
+  if (missing(txVector)) {
+    return(result)
+  } else {
+    return(result %>% filter(Transaction %in% txVector))
+  }
+  
+}
+
+
+getTimeToFinality <- function(graphData,threshold) {
+  result <- graphData %>%
+    filter(!is.na(avgConf)) %>%                # ignore NA rows
+    filter(avgConf > threshold) %>%                   # exceed threshold
+    group_by(Transaction) %>%
+    summarise(
+      first_time = format_simtime(min(Time)),
+      .groups = "drop"
+    )
+  return(result)
+}
+
+getCulpritSims <- function(
+    beliefData,
+    horizon,
+    alignTimes = TRUE,
+    arrivalTimes,
+    timeAlignmentOffset = 0,
+    threshold = 0.9,
+    txVector) {
   
   
   if (alignTimes) {
@@ -335,7 +491,6 @@ getFinality <- function(
     horizon = auto_time_to_ms(horizon)
   }
   
-  
   result <- beliefData %>%
     # Step 1: keep only times <= horizon
     filter(Time <= horizon) %>%
@@ -343,38 +498,16 @@ getFinality <- function(
     # Step 2: for each Transaction, find the maximum Time
     group_by(Simulation,Transaction) %>%
     filter(Time == max(Time)) %>%
-    group_by(Transaction) %>%
-    # Step 3: calculate mean Belief over simulations for that Transaction × Time
-    summarise(
-      Time_ms = first(Time),                    # the max time
-      sampleMean = mean(Belief, na.rm = TRUE),
-      sampleSD = sd(Belief, na.rm = TRUE),
-      n = n(),
-      thres_test = list(binom.test(n_above,n,p=thresTest_p,alternative = "greater")),
-      test = list(binom.test(n_above,n)),
-      .groups = "drop"
-    ) %>% 
-    mutate(Time = format_simtime(Time_ms), 
-           threstest_p_val = thres_test[[1]]$p.value,
-           threstest_confIntLow = thres_test[[1]]$conf.int[1],
-           threstest_confIntHigh = thres_test[[1]]$conf.int[2],
-           threstest_Final = (threstest_p_val <= alpha),
-           point_estimate = test[[1]]$estimate,
-           ci_low = test[[1]]$conf.int[1],
-           ci_high = test[[1]]$conf.int[2]
-           ) %>% 
-    select(Transaction, Time, Time_ms,
-           sampleMean, sampleSD,
-           threstest_p_val, threstest_confIntLow, threstest_confIntHigh, threstest_Final,
-           point_estimate,ci_low,ci_high
-           )
-  
+    filter(Belief <= threshold) %>% 
+    select(Transaction, Simulation, Time, Belief) %>%
+    arrange(Transaction)
+
+    
   if (missing(txVector)) {
     return(result)
   } else {
     return(result %>% filter(Transaction %in% txVector))
   }
-  
 }
 
 
@@ -408,15 +541,15 @@ getTransactionHistory <- function(
   ed_out <- tibble()
   if (!missing(eventData)) {
     
-    eD = eventData %>% filter(Object %in% txVector) %>% arrange(SimTime)
+    eD = eventData %>% filter(ObjectID %in% txVector) %>% arrange(SimTime)
     
     eD_out <- eD %>%
       arrange(SimID, SimTime, EventID) %>%
       rowwise() %>%
       mutate(
         Time = SimTime,
-        Transaction = Object,
-        Event = paste0(event_text(EventType), " ", Node)
+        Transaction = ObjectID,
+        Event = paste0(event_text(EventType), " ", NodeID)
       ) %>%
       ungroup() %>%
       select(SimID, Time, Transaction, Event)  # keep only the columns you want
@@ -440,7 +573,7 @@ getTransactionHistory <- function(
             mutate(
               Time = SimTime,
               Transaction = tx,
-              Event = paste0(event_text(EvtType)," ", NodeID)
+              Event = paste0(event_text(EventType)," ", NodeID)
             ) %>%
             ungroup() %>%
             select(SimID, Time, Transaction, Event)  # keep only the columns you want
