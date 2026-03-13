@@ -16,30 +16,59 @@ source("library.R")
 library("gridExtra")
 knitr::opts_chunk$set(
   warning = FALSE,
-  message = FALSE
+  message = FALSE,
+  echo = TRUE
 )
 
 setVars <- function(outputFolder,experiment,txs) {
+  outputRelFolder <<- outputFolder
   blockData <<- read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
   eventData <<- read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
   beliefData <<- read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
   rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
   producePaceData(outputRelFolder,experiment)
-  txVector <<- c(5,6,7,8,9)
+  txVector <<- txs
+  experiment <<- experiment
 }
 ```
 
-# Cases {.tabset}
+# Honest Cases {.tabset}
 
-## Simple normal
+## Normal State
+
+### Overview
+
+-   **Configuration:** `examples/configs/test/normal/test.normal.properties`
+-   **Workload Sampler:** `StandardRandom`
+-   **Runs With:** `test-normal.sh`
+
+A simple PoW network consisting of $30$ nodes, $100$ seeds, $1000$ transactions arriving at a $\lambda = 0.025$. The arrival rate is $1$ transaction every $40$ seconds, hence the expected time for the arrival of $1000$ transactions is $11.1$ hours. Analysis focuses on the first few minutes; sample transactions are {5, 6, 7, 8 , 9}.
 
 ### Data Load
 
 ```{r}
-setVars("../../../../cnsim-bitcoin/examples/results/","test.normal - 2025.12.21 14.21.19",c(5,6,7,8,9))
+
+experiment = "test.normal - 2026.01.31 11.44.50"
+
+setVars("../../../../cnsim-bitcoin/examples/results/",
+        experiment,
+        c(5,6,7,8,9))
 ```
 
 ### Pace Analysis
+
+Block pace is based on the network power and the corresponding difficulty. We specifically have:
+
+-   Difficulty = `r (pow.difficulty = 4.3933890848757156E23)`
+-   HashPower (mean) = `r (pow.hashPowerMean = 2.8644667E11)` (per node, so total is $30\times$ in G/sec)
+-   HashPower (sd) = `r (pow.hashPowerSD = 2.8644667E10)`
+
+The theoretical pace would be:
+
+-   Mean: `r mean(pace_theoretical(1000, pow.difficulty,pow.hashPowerMean * 30 * 1E9)/60)` minutes
+
+-   Standard deviation: `r sd(pace_theoretical(1000, pow.difficulty,pow.hashPowerMean * 30 * 1E9)/60)` minutes
+
 ```{R }
 paceInfo(outputRelFolder,experiment)
 ```
@@ -88,25 +117,24 @@ getTimeToFinality(test.plain.data, 0.9)
 getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
 ```
 
+## Workload with a Conflict
 
+### Overview
 
+-   **Configuration:** `examples/configs/test/conflict/test.conflict.properties`
+-   **Workload Sampler:** `examples/configs/test/conflict/test.conflict.csv`
+-   **Runs With:** \``test-normal.sh`
 
-
-
-
-
-
-
-
-## Workload with a Conflict 
+We adopt the same configuration as above except for a conflict that we hard-code conflict between transactions 5 and 7. We expect transaction 7 to never reach finality due to it coming second.
 
 ### Data Load
 
 ```{r}
-setVars("../../../../cnsim-bitcoin/examples/results/","test.conflict - 2025.12.21 14.32.47",c(5,6,7,8,9))
+setVars("../../../../cnsim-bitcoin/examples/results/","test.conflict - 2026.01.31 15.29.26",c(5,6,7,8,9))
 ```
 
 ### Pace Analysis
+
 ```{R }
 paceInfo(outputRelFolder,experiment)
 ```
@@ -158,20 +186,24 @@ getTimeToFinality(test.plain.data, 0.9)
 getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
 ```
 
+## Setting with restricted block size
 
+### Overview
 
+-   **Configuration:** `examples/configs/test/conflict/test.size.properties`
+-   **Workload Sampler:** `examples/configs/test/conflict/test.size.csv`
+-   **Runs With:** \``test-size.sh`
 
-
-
-## Setting with restricted block size 
+We adopt the same configuration but increase the size of transaction (from `5Kb` to `200Kb` and decrease the size of the block (from `1MB` to `500Kb`). The resulting bottleneck would imply that some transactions may have longer finality. For simplicity we remove dependencies.
 
 ### Data Load
 
 ```{r}
-setVars("../../../../cnsim-bitcoin/examples/results/","test.size - 2025.12.21 18.25.51", c(5,6,7,8,9))
+setVars("../../../../cnsim-bitcoin/examples/results/","test.size - 2026.01.31 15.38.14", c(5,6,7,8,9))
 ```
 
 ### Pace Analysis
+
 ```{R }
 paceInfo(outputRelFolder,experiment)
 ```
@@ -225,32 +257,75 @@ getTimeToFinality(test.plain.data, 0.9)
 getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
 ```
 
+## Restricted block size and uneven values
 
+### Overview
 
-
-
-
-
-
-
-
-
-
-## Increased transaction sizes with a conflict and different values
-
-[Describe this experiment]
+-   **Configuration:** `examples/configs/test/conflict/test.value.properties`
+-   **Workload Sampler:** `examples/configs/test/conflict/test.value.csv`
+-   **Runs With:** \``test-value.sh`
 
 ### Data Load
 
 ```{r}
-outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
-experiment = "test.txValue - 2025.12.17 20.34.52"
-blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
-eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
-beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
-  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
+experiment = "test.value - 2026.01.31 16.03.07"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(5,6,7,8,9,10,11))
+```
 
-txVector = c(5,6,7,8,9,10,11)
+We adopt the same configuration as above, except that transactions `5-11` (a) keep sizes stable to `200,000` (b) increase sizes from `250` to `3,000`.
+
+```{R}
+inp <- read_csv(paste0(outputRelFolder,experiment,"/Input - ",experiment,".csv"))
+print(inp %>% filter(TxID %in% txVector, SimID == 1) %>% select(TxID,Size,Value) %>% arrange(TxID))
+```
+
+We also allow update of seeds from the beginning of the simulation to allow for more variability, given the closeness of the sample transactions.
+
+### Pace Analysis
+
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Belief Graphing
+
+```{R }
+graphData = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+```
+
+```{R }
+grid.arrange(
+  getBeliefGraph(graphData, xlim = c("0:00","20:00"),threshold = 0.9, VaR = "exclude"),
+  getBeliefGraph(graphData, xlim = c("0:00","20:00"),threshold = 0.9, VaR = "only"), ncol = 1
+)
+```
+
+### Finality Analysis
+
+```{R }
+res = getFinality(beliefData,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "10:00.000") 
+res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
+```
+
+```{R }
+ggplot(res, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(test.plain.data, 0.9)
 ```
 
 ### Transaction History
@@ -259,152 +334,433 @@ txVector = c(5,6,7,8,9,10,11)
 getTransactionHistory(eventData,blockData,txVector = c(5), simVector = c(10,10))
 ```
 
-### Belief Graphing
+# Catch-up Attack Cases
 
-```{R }
-test.plain.txSize.data = prepareGraphData(beliefData,
-                                alignTimes = TRUE,
-                                VaR = TRUE,
-                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
-```
+## Overview
 
-```{R eval = FALSE, echo = FALSE}
-getBeliefGraph(test.plain.txSize.data)
-```
+-   **Configuration:** `examples/configs/test/XXX`
+-   **Workload Sampler:** `examples/configs/test/XXXX.csv`
+-   **Runs With:** \``test-XXXX.sh`
 
-```{R }
-getBeliefGraph(test.plain.txSize.data, xlim = c("-1:00","15:00"),threshold = 0.9)
-```
-
-
-
-
-```{R }
-#redrawGraph(lowrate1.plain.data,faceted = TRUE, timeUnit = "ms",xmin=0,xmax=1800000)
-```
-
-### Finality Analysis
-
-```{R }
-res = getFinality(beliefData,
-            alignTimes = TRUE, 
-            threshold = 0.9,
-            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
-            horizon = "10:00.000") 
-res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
-
-```
-
-```{R echo = FALSE}
-ggplot(res, aes(x = Transaction, y = point_estimate)) +
-  geom_point(color = "blue") +
-  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
-  labs(x = "Transaction", 
-       y = "Estimated probability of success",
-       title = "Point estimates with 95% CI") +
-  theme_minimal()
-```
-
-```{R }
-res = getCulpritSims(beliefData,
-            alignTimes = TRUE, 
-            threshold = 0.9,
-            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
-            horizon = "90:00.000")
-res
-
-getTransactionHistory(eventData, blockData, c(6),c(28))
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Attack
-
-[Describe this experiment]
-
-### Data Load
+## Attack - Caching up: -1,0,10%
 
 ```{r}
-outputRelFolder = "../../../../cnsim-bitcoin/examples/results/"
-experiment = "test.txValue - 2025.12.21 12.29.23"
-blockData = read_csv(paste0(outputRelFolder,experiment,"/BlockLog - ",experiment,".csv"))
-eventData = read_csv(paste0(outputRelFolder,experiment,"/EventLog - ",experiment,".csv"))
-beliefData = read_csv(paste0(outputRelFolder,experiment,"/BeliefLogShort - ",experiment,".csv")) %>% 
-  rename(Simulation = SimID, Time = `Time (ms from start)`, Transaction = `Transaction ID`)
-
-txVector = c(5,6,7,8,9)
+#experiment = "test.attack.control - 2026.01.31 17.15.52"
+experiment = "catchup.attack.-1.0.10 - 2026.02.20 16.36.10"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(50,60,70,80,90))
 ```
 
-
-### Belief Graphing
+### Pace Analysis
 
 ```{R }
-test.attack.txSize.data = prepareGraphData(beliefData,
+paceInfo(outputRelFolder,experiment)
+```
+
+### Data Preparation
+
+```{R }
+graphData.attack.1.10 = prepareGraphData(beliefData,
                                 alignTimes = TRUE,
                                 VaR = TRUE,
                                 arrivalTimes = getTxArrivalTimes(eventData,txVector))
-```
 
-```{R eval = FALSE, echo = FALSE}
-getBeliefGraph(test.attack.txSize.data)
+beliefData.attack.1.10 <- beliefData
 ```
 
 ```{R }
-getBeliefGraph(test.attack.txSize.data, xlim = c("-1:00","15:00"),threshold = 0.9)
+getBeliefGraph(graphData.attack.1.10, xlim = c("0:00","0:15:00"),threshold = 0.9, VaR = "exclude")
 ```
 
-
-
-### Finality Analysis
+### Finality Analysis - Theoretical
 
 ```{R }
-res = getFinality(beliefData,
+q = 0.1
+p = 0.9
+z = 1
+q_z = (q/p)^z
+```
+
+The probability that the attack will ever catch up from $z$ blocks behind given the $q*10$/$p*10$ ratio is $q_z$.
+
+### Finality Analysis - Empirical
+
+```{R }
+res.attack.1.10 = getFinality(beliefData.attack.1.10,
             alignTimes = TRUE, 
             threshold = 0.9,
             arrivalTimes = getTxArrivalTimes(eventData,txVector), 
             horizon = "10:00.000") 
-res %>% select(Transaction, successes, trials, p_val = threstest_p_val, point_estimate,ci_low,ci_high)
-
 ```
 
-```{R echo = FALSE}
-ggplot(res, aes(x = Transaction, y = point_estimate)) +
+```{R }
+(res.conciseres.attack.1.10 <- res.attack.1.10 %>% mutate(theoretical = (1- q_z)) %>%
+  select(Transaction, successes, trials, p_val = threstest_p_val, 
+         point_estimate, ci_low, theoretical, ci_high))
+```
+
+```{R }
+target <- res.conciseres.attack.1.10 %>% filter(Transaction == 70)
+equivalence(target$trials, target$successes, target$theoretical, delta = 0.08)
+```
+
+```{R }
+ggplot(res.conciseres.attack.1.10, aes(x = Transaction, y = point_estimate)) +
   geom_point(color = "blue") +
   geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
   labs(x = "Transaction", 
        y = "Estimated probability of success",
        title = "Point estimates with 95% CI") +
+   annotate("text",
+           x = Inf,
+           y = target$theoretical,
+           label = "Theoretical",
+           hjust = 1.1,
+           vjust = -0.5) + 
+  geom_hline(yintercept = target$theoretical,
+             linetype = "dashed") +
   theme_minimal()
 ```
 
 ```{R }
-res = getCulpritSims(beliefData,
+getTimeToFinality(graphData.attack.1.10, 0.9)
+```
+
+## Attack 5-30%
+
+```{r}
+experiment = "catchup.attack.-5.0.30 - 2026.02.20 16.36.13"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(50,60,70,80,90))
+```
+
+### Pace Analysis
+
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Data Preparation
+
+```{R }
+graphData.attack.5.30 = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+
+beliefData.attack.5.30 <- beliefData
+```
+
+```{R }
+getBeliefGraph(graphData.attack.5.30, xlim = c("0:00","0:15:00"),threshold = 0.9, VaR = "exclude")
+```
+
+### Finality Analysis - Theoretical
+
+```{R }
+q = 0.3
+p = 0.7
+z = 5
+(q_z = (q/p)^z)
+```
+
+The probability that the attack will ever catch up from $z$ blocks behind given the $q*10$/$p*10$ ratio is $q_z$.
+
+### Finality Analysis - Empirical
+
+```{R }
+res.attack.5.30 = getFinality(beliefData.attack.5.30,
             alignTimes = TRUE, 
             threshold = 0.9,
             arrivalTimes = getTxArrivalTimes(eventData,txVector), 
-            horizon = "90:00.000")
-res
+            horizon = "10:00.000") 
+```
 
-getTransactionHistory(eventData, blockData, c(6),c(28))
+```{R }
+(res.concise.attack.5.30 <- res.attack.5.30 %>% mutate(theoretical = (1- q_z)) %>%
+  select(Transaction, successes, trials, p_val = threstest_p_val, 
+         point_estimate, ci_low, theoretical, ci_high))
+```
+
+```{R }
+target <- res.concise.attack.5.30 %>% filter(Transaction == 70)
+equivalence(target$trials, target$successes, target$theoretical, delta = 0.08)
 
 ```
 
+```{R }
+ggplot(res.concise.attack.5.30, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+   annotate("text",
+           x = Inf,
+           y = target$theoretical,
+           label = "Theoretical",
+           hjust = 1.1,
+           vjust = -0.5) + 
+  geom_hline(yintercept = target$theoretical,
+             linetype = "dashed") +
+  theme_minimal()
+```
 
+```{R }
+getTimeToFinality(graphData.attack.5.30, 0.9)
+```
 
+# Confirmation Depth Attack Cases
 
+## Overview
+
+-   **Configuration:** `examples/configs/test/XXX`
+-   **Workload Sampler:** `examples/configs/test/XXXX.csv`
+-   **Runs With:** \``test-XXXX.sh`
+
+## Attack - Confirmations: Advantage = 0, Confirmations = 1, Share: 10%
+
+```{r}
+#experiment = "test.attack.control - 2026.01.31 17.15.52"
+experiment = "confirmation.attack.0.1.10 - 2026.02.22 20.25.54"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(50,60,70,80,90))
+```
+
+### Pace Analysis
+
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Data Preparation
+
+```{R }
+graphData.confirmation.0.1.10 = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+
+beliefData.confirmation.0.1.10 <- beliefData
+```
+
+```{R }
+getBeliefGraph(graphData.confirmation.0.1.10, xlim = c("0:00","0:45:00"),threshold = 0.9, VaR = "exclude")
+```
+
+### Finality Analysis - Theoretical
+
+```{R }
+q = 0.1
+z = 1
+(P = attacker_success_probability(q,z))
+# P = 0.20 # From paper!
+P = 0.056 # From paper!
+```
+
+The probability that the attack will ever catch up after the target block has received $z$ confirmations is $P$.
+
+### Finality Analysis - Empirical
+
+```{R }
+res.confirmation.0.1.10 = getFinality(beliefData.confirmation.0.1.10,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "1:40:00.000") 
+```
+
+```{R }
+(res.conciseres.confirmation.0.1.10 <- res.confirmation.0.1.10 %>% mutate(theoretical = (1- P)) %>%
+  select(Transaction, successes, trials, p_val = threstest_p_val, 
+         point_estimate, ci_low, theoretical, ci_high))
+```
+
+```{R }
+target <- res.conciseres.confirmation.0.1.10 %>% filter(Transaction == 70)
+equivalence(target$trials, target$successes, target$theoretical, delta = 0.1)
+```
+
+```{R }
+ggplot(res.conciseres.attack.1.10, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+   annotate("text",
+           x = Inf,
+           y = target$theoretical,
+           label = "Theoretical",
+           hjust = 1.1,
+           vjust = -0.5) + 
+  geom_hline(yintercept = target$theoretical,
+             linetype = "dashed") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(graphData.attack.1.10, 0.9)
+```
+
+## Attack - Confirmations: Advantage = 0, Confirmations = 5, Share: 30%
+
+```{r}
+#experiment = "test.attack.control - 2026.01.31 17.15.52"
+experiment = "confirmation.attack.0.5.30 - 2026.02.22 20.46.15"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(50,60,70,80,90))
+```
+
+### Pace Analysis
+
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Data Preparation
+
+```{R }
+graphData.confirmation.0.5.30 = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+
+beliefData.confirmation.0.5.30 <- beliefData
+```
+
+```{R }
+getBeliefGraph(graphData.confirmation.0.5.30, xlim = c("0:00","0:45:00"),threshold = 0.9, VaR = "exclude")
+```
+
+### Finality Analysis
+
+```{R }
+res.confirmation.0.5.30 = getFinality(beliefData.confirmation.0.5.30,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "1:10:00.000") 
+```
+
+```{R }
+q = 0.3
+z = 5
+(P = attacker_success_probability(q,z))
+P = 0.19762 # From paper!
+P = 0.15645 # From paper!
+```
+
+The probability that the attack will ever catch up after the target block has received $z$ confirmations is $P$.
+
+```{R }
+(res.conciseres.confirmation.0.5.30 <- res.confirmation.0.5.30 %>% mutate(theoretical = (1- P)) %>%
+  select(Transaction, successes, trials, p_val = threstest_p_val, 
+         point_estimate, ci_low, theoretical, ci_high))
+```
+
+```{R }
+target <- res.conciseres.confirmation.0.5.30 %>% filter(Transaction == 70)
+equivalence(target$trials, target$successes, target$theoretical, delta = 0.1)
+```
+
+```{R }
+ggplot(res.conciseres.confirmation.0.5.30, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+   annotate("text",
+           x = Inf,
+           y = target$theoretical,
+           label = "Theoretical",
+           hjust = 1.1,
+           vjust = -0.5) + 
+  geom_hline(yintercept = target$theoretical,
+             linetype = "dashed") +
+  theme_minimal()
+```
+
+```{R }
+getTimeToFinality(graphData.attack.1.10, 0.9)
+```
+
+## Attack - Confirmations: Advantage = 0, Confirmations = 6, Share: 40%
+
+```{r}
+#experiment = "test.attack.control - 2026.01.31 17.15.52"
+experiment = "confirmation.attack.0.6.40 - 2026.02.23 00.09.07"
+setVars("../../../../cnsim-bitcoin/examples/results/",experiment, c(50,60,70,80,90))
+```
+
+### Pace Analysis
+
+```{R }
+paceInfo(outputRelFolder,experiment)
+```
+
+### Data Preparation
+
+```{R }
+graphData.confirmation.0.6.40 = prepareGraphData(beliefData,
+                                alignTimes = TRUE,
+                                VaR = TRUE,
+                                arrivalTimes = getTxArrivalTimes(eventData,txVector))
+
+beliefData.confirmation.0.6.40 <- beliefData
+```
+
+```{R }
+getBeliefGraph(graphData.confirmation.0.6.40, xlim = c("0:00","3:45:00"),threshold = 0.9, VaR = "exclude")
+```
+
+### Finality Analysis
+
+```{R }
+res.confirmation.0.6.40 = getFinality(beliefData.confirmation.0.6.40,
+            alignTimes = TRUE, 
+            threshold = 0.9,
+            arrivalTimes = getTxArrivalTimes(eventData,txVector), 
+            horizon = "3:10:00.000") 
+```
+
+```{R }
+q = 0.4
+z = 7
+(P = attacker_success_probability(q,z))
+
+P = 0.45769 # From paper!
+```
+
+The probability that the attack will ever catch up after the target block has received $z$ confirmations is $P$.
+
+```{R }
+(res.conciseres.confirmation.0.6.40 <- res.confirmation.0.6.40 %>% mutate(theoretical = (1- P)) %>%
+  select(Transaction, successes, trials, p_val = threstest_p_val, 
+         point_estimate, ci_low, theoretical, ci_high))
+```
+
+```{R }
+target <- res.conciseres.confirmation.0.6.40 %>% filter(Transaction == 70)
+equivalence(target$trials, target$successes, target$theoretical, delta = 0.1)
+```
+
+```{R }
+ggplot(res.conciseres.confirmation.0.6.40, aes(x = Transaction, y = point_estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.5, color = "lightblue") +
+  labs(x = "Transaction", 
+       y = "Estimated probability of success",
+       title = "Point estimates with 95% CI") +
+   annotate("text",
+           x = Inf,
+           y = target$theoretical,
+           label = "Theoretical",
+           hjust = 1.1,
+           vjust = -0.5) + 
+  geom_hline(yintercept = target$theoretical,
+             linetype = "dashed") +
+  theme_minimal()
+```
+
+```{r }
+
+knitr::knit_exit()
+```

@@ -2,7 +2,7 @@ library(tidyverse)
 library(nptest)
 library(knitr)
 library(TOSTER)
-
+library(data.table)
 
 #
 #
@@ -75,6 +75,131 @@ auto_time_to_ms <- function(x) {
 }
 
 
+#
+#
+# ATTACK THEORETICAL PROBABILITY
+#
+#
+
+attacker_success_probability <- function(q, z) {
+  if (q <= 0) return(0)
+  if (q >= 1) return(1)
+  
+  p <- 1 - q
+  lambda <- z * (q / p)
+  
+  sum <- 1.0
+  
+  for (k in 0:z) {
+    poisson <- dpois(k, lambda)   # numerically stable Poisson probability
+    sum <- sum - poisson * (1 - (q / p)^(z - k + 1))
+    #sum <- sum - poisson * (1 - (q / p)^(z - k))
+  }
+  
+  return(sum)
+}
+
+
+
+
+equivalence <- function(trials, successes, theoretical, delta = 0.03, alpha = 0.05) {
+  n  <- trials
+  x  <- successes
+  phat <- x/n
+  p0 <- theoretical
+
+  low  <- p0 - delta
+  high <- p0 + delta
+  
+  # Standard error under observed proportion
+  se <- sqrt(phat * (1 - phat) / n)
+  
+  # Lower test: H0: p <= low
+  z1 <- (phat - low) / se
+  p1 <- 1 - pnorm(z1)
+  
+  # Upper test: H0: p >= high
+  z2 <- (phat - high) / se
+  p2 <- pnorm(z2)
+  
+  
+  if ((p1 < alpha) && (p2 < alpha)){
+    result <- "pass"
+  } else {
+    result <- "fail"
+  }
+  
+  ci90 <- prop.test(x, n,
+                    conf.level = 1 - 2*alpha,
+                    correct = FALSE)$conf.int
+  
+  if (result == "pass") {
+    cat(paste0(
+      "PASS. An equivalence test was conducted to evaluate whether the observed proportion ",
+      "phat differed from the theoretical value p0 by more than delta. ",
+      "The observed proportion was ", phat,
+      " (90% CI [", round(ci90[1],5), ", ", round(ci90[2],5), "]). ",
+      "The entire confidence interval was contained within the equivalence bounds [",
+      round(low,5), ", ", round(high,5), 
+      "], supporting statistical equivalence at significance level alpha."
+    ),"\n")
+  } else {
+    cat(paste0(
+      "FAIL. An equivalence test was conducted to evaluate whether the observed proportion ",
+      "phat differed from the theoretical value p0 by more than delta. ",
+      "The observed proportion was ", phat,
+      " (90% CI [", round(ci90[1],5), ", ", round(ci90[2],5), "]). ",
+      "The confidence interval overlapped the equivalence bounds [",
+      round(low,5), ", ", round(high,5), "], ",
+      "so statistical equivalence at significance level alpha could not be established."
+    ),"\n")
+  }
+}
+  
+
+equivalence_vec <- function(trials, successes, theoretical, delta = 0.03, alpha = 0.05) {
+  n  <- trials
+  x  <- successes
+  phat <- x / n
+  p0 <- theoretical
+  
+  
+  
+  low  <- max(0,p0 - delta)
+  high <- min(1,p0 + delta)
+  
+  se <- sqrt(phat * (1 - phat) / n)
+  se1 <- sqrt(low * (1 - low) / n)
+  se2 <- sqrt(high * (1 - high) / n)
+  
+  z1 <- (phat - low) / se1
+  p1 <- 1 - pnorm(z1)
+  
+  z2 <- (phat - high) / se2
+  p2 <- pnorm(z2)
+  
+  result <- ifelse((p1 < alpha) & (p2 < alpha), "PASS", "FAIL")
+  
+  ci90 <- prop.test(x, n,
+                    conf.level = 1 - 2*alpha,
+                    correct = FALSE)$conf.int
+  
+  tibble::tibble(
+    lower_bound = low,
+    ci_low = ci90[1],
+    observed = phat,
+    theoretical = p0,
+    ci_high = ci90[2],
+    upper_bound = high,
+    p_lower = p1,
+    p_upper = p2,
+    result = result,
+    delta = delta
+  )
+}
+
+
+
 
 
 
@@ -124,6 +249,20 @@ paceInfo <- function(dataFolder,experiment) {
 
 
 
+pace_theoretical <- function(n, difficulty,power) {
+  p <- 1 / difficulty
+  u <- runif(n)
+  trials = floor(log1p(-u) / log1p(-p))
+  return (trials / power)
+}
+
+pace_theoretical2 <- function(n, difficulty,power) {
+  trials = rgeom(n, p = 1/difficulty)
+  return (trials / power)
+}
+
+
+
 #
 #
 # SIMULATION PERFORMANCE
@@ -146,10 +285,18 @@ getRunTime <- function(dataFolder,experiment) {
 #
 #
 
-getTxArrivalTimes <- function(eventData,txVector) {
-  return(eventData %>% 
-    filter(EventType == "Event_NewTransactionArrival", ObjectID %in% txVector) %>% 
-    select(Simulation = SimID,Transaction = ObjectID, Time = SimTime))
+getTxArrivalTimes <- function(data,txVector) {
+  
+  if ("EventType" %in% names(data)) { # Event Log is used
+    return(data %>% 
+             filter(EventType == "Event_NewTransactionArrival", ObjectID %in% txVector) %>% 
+             select(Simulation = SimID,Transaction = ObjectID, Time = SimTime))
+  } else { # Input data is used
+    return(data %>% 
+             filter(TxID %in% txVector) %>% 
+             select(Simulation = SimID,Transaction = TxID, Time = ArrivalTime))
+    
+  }
 }
 
 timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
@@ -609,3 +756,96 @@ getTransactionHistory <- function(
 }
 
 
+
+
+# concatenate_results.R
+# Concatenates CSV/TXT files with matching prefixes across multiple result folders.
+#
+# Usage:
+#   source("concatenate_results.R")
+#   concatenate_results(
+#     dir_names = c("folder1", "folder2", ...),
+#     output_folder_name = "folderALL",
+#     base_dir = getwd()
+#   )
+
+# concatenate_results.R
+# Concatenates CSV/TXT files with matching prefixes across multiple result folders.
+#
+# Usage:
+#   source("concatenate_results.R")
+#   concatenate_results(
+#     dir_names = c("folder1", "folder2", ...),
+#     output_folder_name = "folderALL",
+#     input_dir = "path/to/results"
+#   )
+concatenate_results <- function(dir_names, output_folder_name, input_dir) {
+  output_dir <- file.path(input_dir, output_folder_name)
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  
+  # Discover files from the first directory
+  first_dir <- file.path(input_dir, dir_names[1])
+  all_files <- list.files(first_dir)
+  
+  # Extract prefix (everything before the first " - ")
+  get_prefix <- function(filename) str_replace(filename, " - .*$", "")
+  prefixes <- unique(map_chr(all_files, get_prefix))
+  
+  cat("Found prefixes:", paste(prefixes, collapse = ", "), "\n")
+  cat("Output folder:", output_dir, "\n\n")
+  
+  for (prefix in prefixes) {
+    cat("Processing:", prefix, "... ")
+    
+    all_lines <- character(0)
+    is_first <- TRUE
+    
+    for (dir_name in dir_names) {
+      dir_path <- file.path(input_dir, dir_name)
+      files_in_dir <- list.files(dir_path, full.names = TRUE)
+      match <- files_in_dir[str_starts(basename(files_in_dir), fixed(str_c(prefix, " - ")))]
+      
+      if (length(match) == 0) {
+        warning(str_glue("No file with prefix {prefix} found in {dir_name}"))
+        next
+      }
+      
+      lines <- read_lines(match[1])
+      
+      if (is_first) {
+        all_lines <- lines
+        is_first <- FALSE
+      } else if (length(lines) > 1) {
+        # Skip header line, append data lines only
+        all_lines <- c(all_lines, lines[-1])
+      }
+    }
+    
+    if (length(all_lines) == 0) {
+      cat("SKIPPED (no files found)\n")
+      next
+    }
+    
+    # Preserve original file extension
+    original_file <- list.files(first_dir, pattern = str_c("^", fixed(prefix), " - "))
+    ext <- str_extract(original_file[1], "\\.[^.]+$")
+    output_file <- file.path(output_dir, str_c(prefix, " - ", output_folder_name, ext))
+    
+    write_lines(all_lines, output_file)
+    cat(length(all_lines) - 1, "data lines written\n")
+  }
+  
+  cat("\nDone.\n")
+}
+# ── Example usage ──────────────────────────────────────────────────────────────
+# concatenate_results(
+#   dir_names = c(
+#     "confirmation.attack.0.40.4.1.200 - 2026.03.12 17.59.17",
+#     "confirmation.attack.0.40.4.201.400 - 2026.03.12 18.09.19",
+#     "confirmation.attack.0.40.4.401.600 - 2026.03.12 18.19.51",
+#     "confirmation.attack.0.40.4.601.800 - 2026.03.12 18.30.11",
+#     "confirmation.attack.0.40.4.801.1000 - 2026.03.12 18.40.36"
+#   ),
+#   output_folder_name = "confirmation.attack.0.40.4.ALL",
+#   input_dir = "F:/4. Software/cnsim-bitcoin/examples/results"
+# )
