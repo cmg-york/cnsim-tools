@@ -4,6 +4,18 @@ library(knitr)
 library(TOSTER)
 library(data.table)
 
+load_libraries <- function(libs) {
+  for (lib in libs) {
+    if (!require(lib, character.only = TRUE)) {
+      install.packages(lib)
+      library(lib, character.only = TRUE)
+    }
+  }
+}
+
+load_libraries(c("tidyverse", "nptest", "knitr", "xtable","TOSTER", "data.table"))
+
+
 #
 #
 #  H E L P E R S  
@@ -93,12 +105,51 @@ attacker_success_probability <- function(q, z) {
   for (k in 0:z) {
     poisson <- dpois(k, lambda)   # numerically stable Poisson probability
     sum <- sum - poisson * (1 - (q / p)^(z - k + 1))
-    #sum <- sum - poisson * (1 - (q / p)^(z - k))
   }
   
   return(sum)
 }
 
+#' Modified Nakamoto catch-up probability
+#'
+#' Calculates the probability that an attacker can surpass the honest chain
+#' after z confirmations. Differs from the original Nakamoto algorithm in that
+#' the attacker starts at a deficit of z+1 (rather than z) and must strictly
+#' surpass the honest chain (rather than merely equal it).
+#'
+#' @param q Attacker's fraction of total network hash power (0 < q < 0.5)
+#' @param z Number of confirmations
+#' @return Probability that the attacker successfully surpasses the honest chain
+nakamoto_catchup_confirmations <- function(q, z) {
+  # Honest network's fraction of hash power
+  p <- 1.0 - q
+  
+  # Expected number of blocks the attacker mines during z confirmations
+  lambda <- z * q / p
+  
+  # Step probability ratio for the random-walk catch-up model
+  ratio <- q / p
+  
+  # Poisson PMF terms P(X = k) for k = 0, 1, ..., z+1
+  # where X is the number of blocks the attacker has mined
+  poisson <- dpois(0:(z + 1), lambda)
+  
+  # Component 1 — P_sim: probability the attacker has already mined more than
+  # z+1 blocks, placing them strictly ahead without further catch-up needed.
+  # This is the upper tail of the Poisson distribution: P(X > z+1)
+  p_sim <- 1.0 - sum(poisson)
+  
+  # Component 2 — P_tail: for each k <= z+1, the attacker has a remaining
+  # deficit of (z - k + 2) blocks to overcome. The probability of closing
+  # this gap via a random walk is (q/p)^(z - k + 2), weighted by the
+  # Poisson probability of having mined exactly k blocks.
+  k <- 0:(z + 1)
+  p_tail <- sum(poisson * ratio^(z - k + 2))
+  
+  # Total success probability is the sum of both components
+  p_total <- p_sim + p_tail
+  return(p_total)
+}
 
 
 
@@ -849,3 +900,39 @@ concatenate_results <- function(dir_names, output_folder_name, input_dir) {
 #   output_folder_name = "confirmation.attack.0.40.4.ALL",
 #   input_dir = "F:/4. Software/cnsim-bitcoin/examples/results"
 # )
+
+
+setVars <- function(outputFolder, experiment, txVector) {
+  # Read the CSV files
+  blockData <- safe_read_csv(paste0(outputFolder, experiment, "/BlockLog - ", experiment, ".csv"))
+  eventData <- read_csv(paste0(outputFolder, experiment, "/EventLog - ", experiment, ".csv"))
+  inputData <- read_csv(paste0(outputFolder, experiment, "/Input - ", experiment, ".csv"))
+  beliefData <- read_csv(paste0(outputFolder, experiment, "/BeliefLogShort - ", experiment, ".csv")) %>%
+    rename(Simulation = SimID,
+           Time = `Time (ms from start)`,
+           Transaction = `Transaction ID`)
+  
+  # Build a list indexed by code
+  result <- list(
+    outputFolder = outputFolder,
+    experiment = experiment,
+    blockData = blockData,
+    eventData = eventData,
+    inputData = inputData,
+    beliefData = beliefData,
+    txVector = txVector
+  )
+  
+  return(result)
+}
+
+
+
+
+safe_read_csv <- function(path) {
+  tryCatch(
+    readr::read_csv(path),
+    error = function(e) NULL
+  )
+}
+
