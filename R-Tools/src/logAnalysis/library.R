@@ -1,9 +1,11 @@
-library(tidyverse)
-library(nptest)
-library(knitr)
-library(TOSTER)
-library(data.table)
-
+#' Load and install required libraries
+#'
+#' Checks if each library is available; if not, installs it from CRAN
+#' and then loads it.
+#'
+#' @param libs Character vector of package names to load.
+#' @return Called for side effects (loading packages). Returns invisible NULL.
+#' @export
 load_libraries <- function(libs) {
   for (lib in libs) {
     if (!require(lib, character.only = TRUE)) {
@@ -23,17 +25,45 @@ load_libraries(c("tidyverse", "nptest", "knitr", "xtable","TOSTER", "data.table"
 #
 
 
+#' Bootstrap lower confidence bound
+#'
+#' Computes the lower bound of a BCa bootstrap confidence interval
+#' using non-parametric bootstrap.
+#'
+#' @param x Numeric vector of data.
+#' @param y A function (statistic) to apply to the data.
+#' @param Iter Integer number of bootstrap replicates.
+#' @return Numeric lower bound of the BCa confidence interval; returns 0 if NaN.
+#' @export
 boot.lower <- function(x,y,Iter){
   npbs <- np.boot(x = x, statistic = y, R = Iter)
   return(ifelse(is.nan(npbs$bca[2,1]),0,npbs$bca[2,1]))
 }
 
+#' Bootstrap upper confidence bound
+#'
+#' Computes the upper bound of a BCa bootstrap confidence interval
+#' using non-parametric bootstrap.
+#'
+#' @param x Numeric vector of data.
+#' @param y A function (statistic) to apply to the data.
+#' @param Iter Integer number of bootstrap replicates.
+#' @return Numeric upper bound of the BCa confidence interval; returns 0 if NaN.
+#' @export
 boot.upper <- function(x,y,Iter){
   npbs <- np.boot(x = x, statistic = y, R = Iter)
   return(ifelse(is.nan(npbs$bca[2,2]),0,npbs$bca[2,2]))
   return(npbs$bca[2,2])
 }
 
+#' Format simulation time as HH:MM:SS.mmm
+#'
+#' Converts a time value in milliseconds to a human-readable string
+#' in the format \code{HH:MM:SS.mmm}.
+#'
+#' @param simtime_ms Numeric time in milliseconds.
+#' @return Character string formatted as \code{"HH:MM:SS.mmm"}.
+#' @export
 format_simtime <- function(simtime_ms) {
   total_seconds <- simtime_ms / 1000
   hours   <- floor(total_seconds / 3600)
@@ -44,6 +74,15 @@ format_simtime <- function(simtime_ms) {
   sprintf("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis)
 }
 
+#' Auto-detect time format and convert to milliseconds
+#'
+#' Accepts numeric values (treated as milliseconds), pure integer strings,
+#' or time strings in \code{SS.mmm}, \code{MM:SS.mmm}, or \code{HH:MM:SS.mmm}
+#' format and converts them to integer milliseconds.
+#'
+#' @param x A numeric value or character string representing a time.
+#' @return Integer time in milliseconds.
+#' @export
 auto_time_to_ms <- function(x) {
   
   # If it's already numeric → treat as milliseconds
@@ -93,6 +132,16 @@ auto_time_to_ms <- function(x) {
 #
 #
 
+#' Nakamoto attacker success probability
+#'
+#' Calculates the probability that an attacker with hash-power fraction \code{q}
+#' can catch up and double-spend after \code{z} confirmations, using the
+#' original Nakamoto formula.
+#'
+#' @param q Numeric attacker's fraction of total network hash power (0 to 1).
+#' @param z Integer number of confirmations.
+#' @return Numeric probability of a successful attack.
+#' @export
 attacker_success_probability <- function(q, z) {
   if (q <= 0) return(0)
   if (q >= 1) return(1)
@@ -153,6 +202,19 @@ nakamoto_catchup_confirmations <- function(q, z) {
 
 
 
+#' TOST equivalence test for proportions (console output)
+#'
+#' Performs a two one-sided tests (TOST) procedure to assess whether an
+#' observed proportion is statistically equivalent to a theoretical value
+#' within a margin of \code{delta}. Prints PASS/FAIL result to the console.
+#'
+#' @param trials Integer total number of trials.
+#' @param successes Integer number of successes observed.
+#' @param theoretical Numeric theoretical proportion to test against.
+#' @param delta Numeric equivalence margin (default 0.03).
+#' @param alpha Numeric significance level (default 0.05).
+#' @return Called for side effects (prints result). Returns invisible NULL.
+#' @export
 equivalence <- function(trials, successes, theoretical, delta = 0.03, alpha = 0.05) {
   n  <- trials
   x  <- successes
@@ -208,6 +270,21 @@ equivalence <- function(trials, successes, theoretical, delta = 0.03, alpha = 0.
 }
   
 
+#' TOST equivalence test for proportions (tibble output)
+#'
+#' Vectorized version of the TOST equivalence test. Returns a tibble with
+#' bounds, confidence intervals, p-values, and PASS/FAIL result instead
+#' of printing to the console.
+#'
+#' @param trials Integer total number of trials.
+#' @param successes Integer number of successes observed.
+#' @param theoretical Numeric theoretical proportion to test against.
+#' @param delta Numeric equivalence margin (default 0.03).
+#' @param alpha Numeric significance level (default 0.05).
+#' @return A \code{\link[tibble]{tibble}} with columns: \code{lower_bound},
+#'   \code{ci_low}, \code{observed}, \code{theoretical}, \code{ci_high},
+#'   \code{upper_bound}, \code{p_lower}, \code{p_upper}, \code{result}, \code{delta}.
+#' @export
 equivalence_vec <- function(trials, successes, theoretical, delta = 0.03, alpha = 0.05) {
   n  <- trials
   x  <- successes
@@ -261,6 +338,16 @@ equivalence_vec <- function(trials, successes, theoretical, delta = 0.03, alpha 
 #
 
 
+#' Produce pace data from event log
+#'
+#' Reads the event log for a given experiment, filters for container validation
+#' events, computes inter-event time differences per simulation, and writes
+#' the result to a CSV file.
+#'
+#' @param dataFolder Character path to the base data directory.
+#' @param experiment Character name of the experiment.
+#' @return Called for side effects (writes CSV). Returns invisible NULL.
+#' @export
 producePaceData <- function(dataFolder,experiment){
   pacedata <- read_csv(paste0(dataFolder,experiment,"/EventLog - ",experiment,".csv")) %>% 
     filter(EventType == "Event_ContainerValidation") %>%
@@ -274,6 +361,16 @@ producePaceData <- function(dataFolder,experiment){
 }
 
 
+#' Summarize pace statistics
+#'
+#' Reads pace data CSVs for one or more experiments and computes the mean
+#' and standard deviation of block time (in minutes), along with the
+#' total sample count.
+#'
+#' @param dataFolder Character path to the base data directory.
+#' @param experiment Character vector of one or more experiment names.
+#' @return A tibble with mean block time, standard deviation, and sample count.
+#' @export
 paceInfo <- function(dataFolder,experiment) {
   
   # Ensure experiment is a character vector
@@ -300,6 +397,17 @@ paceInfo <- function(dataFolder,experiment) {
 
 
 
+#' Simulate theoretical block times (inverse-CDF method)
+#'
+#' Generates \code{n} random block times from a geometric distribution
+#' using the inverse-CDF (log) transform of uniform random variates,
+#' scaled by mining power.
+#'
+#' @param n Integer number of samples to generate.
+#' @param difficulty Numeric mining difficulty (reciprocal of success probability).
+#' @param power Numeric mining hash rate (trials per time unit).
+#' @return Numeric vector of simulated block times.
+#' @export
 pace_theoretical <- function(n, difficulty,power) {
   p <- 1 / difficulty
   u <- runif(n)
@@ -307,6 +415,16 @@ pace_theoretical <- function(n, difficulty,power) {
   return (trials / power)
 }
 
+#' Simulate theoretical block times (rgeom method)
+#'
+#' Generates \code{n} random block times from a geometric distribution
+#' using R's built-in \code{\link[stats]{rgeom}}, scaled by mining power.
+#'
+#' @param n Integer number of samples to generate.
+#' @param difficulty Numeric mining difficulty (reciprocal of success probability).
+#' @param power Numeric mining hash rate (trials per time unit).
+#' @return Numeric vector of simulated block times.
+#' @export
 pace_theoretical2 <- function(n, difficulty,power) {
   trials = rgeom(n, p = 1/difficulty)
   return (trials / power)
@@ -320,6 +438,17 @@ pace_theoretical2 <- function(n, difficulty,power) {
 #
 #
 
+#' Get simulation run times
+#'
+#' Reads the event log and computes the wall-clock run time for each
+#' simulation as the difference between the maximum and minimum system
+#' timestamps.
+#'
+#' @param dataFolder Character path to the base data directory.
+#' @param experiment Character name of the experiment.
+#' @return A tibble with columns \code{SimID}, \code{sysTime} (ms),
+#'   and \code{sysTime_formated} (HH:MM:SS.mmm string).
+#' @export
 getRunTime <- function(dataFolder,experiment) {
   runTimes <- read_csv(paste0(dataFolder,experiment,"/EventLog - ",experiment,".csv")) %>% 
     group_by(SimID) %>% summarise(
@@ -336,6 +465,16 @@ getRunTime <- function(dataFolder,experiment) {
 #
 #
 
+#' Get transaction arrival times
+#'
+#' Extracts arrival times for specified transactions from either an event log
+#' or input data frame, depending on which columns are present.
+#'
+#' @param data A data frame — either an event log (with \code{EventType} column)
+#'   or input data (with \code{TxID} column).
+#' @param txVector Character or integer vector of transaction IDs to filter.
+#' @return A tibble with columns \code{Simulation}, \code{Transaction}, and \code{Time}.
+#' @export
 getTxArrivalTimes <- function(data,txVector) {
   
   if ("EventType" %in% names(data)) { # Event Log is used
@@ -350,6 +489,20 @@ getTxArrivalTimes <- function(data,txVector) {
   }
 }
 
+#' Time-align belief data to transaction arrival times
+#'
+#' Joins belief data with arrival times, filters to keep only observations
+#' after each transaction's arrival, and re-zeros the time axis so that
+#' \code{Time = 0} corresponds to each transaction's arrival (plus an
+#' optional offset).
+#'
+#' @param beliefData A data frame with columns \code{Simulation}, \code{Transaction},
+#'   \code{Time}, and \code{Belief}.
+#' @param arrivalTimes A data frame with columns \code{Simulation}, \code{Transaction},
+#'   and \code{Time} (as returned by \code{\link{getTxArrivalTimes}}).
+#' @param offset Numeric offset in milliseconds added after re-zeroing (default 0).
+#' @return A tibble with the same structure as \code{beliefData}, time-aligned.
+#' @export
 timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
   
   if (missing(beliefData)){
@@ -374,9 +527,33 @@ timeAlignBeliefData <- function(beliefData, arrivalTimes, offset = 0) {
 
 
 
-prepareGraphData <- function(beliefData, VaR = FALSE, 
-                             boot = FALSE, R_Boot = 10000, 
-                             alignTimes = FALSE, 
+#' Prepare aggregated graph data from belief data
+#'
+#' Aggregates raw belief data across simulations by computing mean, standard
+#' deviation, and median confidence at each time point per transaction.
+#' Optionally adds bootstrap confidence intervals, Value-at-Risk (5th
+#' percentile), and time alignment to arrival times.
+#'
+#' @param beliefData A data frame with columns \code{Simulation}, \code{Transaction},
+#'   \code{Time}, and \code{Belief}.
+#' @param VaR Logical; if \code{TRUE}, compute the 5th-percentile VaR of belief
+#'   and append a synthetic \code{"VaR"} transaction (default \code{FALSE}).
+#' @param boot Logical; if \code{TRUE}, compute BCa bootstrap confidence
+#'   intervals for the mean (default \code{FALSE}).
+#' @param R_Boot Integer number of bootstrap replicates (default 10000).
+#' @param alignTimes Logical; if \code{TRUE}, time-align belief data to
+#'   transaction arrival times before aggregation (default \code{FALSE}).
+#' @param timeAlignmentOffset Numeric offset in ms added after re-zeroing
+#'   (default 0).
+#' @param arrivalTimes A data frame of arrival times (required when
+#'   \code{alignTimes = TRUE}).
+#' @return A tibble with columns \code{Time}, \code{Transaction} (factor),
+#'   \code{avgConf}, \code{sdConf}, \code{medConf}, and optionally
+#'   \code{lwr}, \code{upr}, \code{VaR}.
+#' @export
+prepareGraphData <- function(beliefData, VaR = FALSE,
+                             boot = FALSE, R_Boot = 10000,
+                             alignTimes = FALSE,
                              timeAlignmentOffset = 0,
                              arrivalTimes) {
   
@@ -464,6 +641,28 @@ prepareGraphData <- function(beliefData, VaR = FALSE,
   
 }
 
+#' Produce belief confidence graph(s)
+#'
+#' Generates one or two \pkg{ggplot2} plots of average confidence over time,
+#' with optional faceting by transaction, threshold line, VaR overlay, and
+#' bootstrap ribbon. Returns a single plot or a named list of plots when
+#' bootstrap data is present.
+#'
+#' @param graphData A data frame as returned by \code{\link{prepareGraphData}}.
+#' @param threshold Numeric belief threshold; if supplied, a horizontal line
+#'   and label are added to the plot.
+#' @param faceted Logical; if \code{TRUE}, facet the plot by transaction
+#'   (default \code{FALSE}).
+#' @param VaR Character controlling VaR display: \code{"include"} (default),
+#'   \code{"exclude"}, or \code{"only"}.
+#' @param xlims A two-element vector of time limits (in any format accepted
+#'   by \code{\link{auto_time_to_ms}}). If omitted, limits are derived from data.
+#' @param timeUnit Character time unit for the x-axis: \code{"min"} (default),
+#'   \code{"sec"}, or \code{"ms"}.
+#' @param txVector Optional vector of transaction IDs to include in the plot.
+#' @return A \code{ggplot} object, or a named list with elements \code{txGraph}
+#'   and \code{bootGraph} when bootstrap data is present.
+#' @export
 getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include",
                            xlims,timeUnit = "min",txVector) {
   
@@ -569,6 +768,34 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include"
 
 
 
+#' Compute finality statistics per transaction
+#'
+#' For each transaction, evaluates belief at the end of the observation
+#' horizon across all simulations. Computes the sample mean, standard
+#' deviation, proportion of simulations exceeding the belief threshold,
+#' and a one-sided binomial test for whether that proportion meets
+#' \code{thresTest_p}.
+#'
+#' @param beliefData A data frame with columns \code{Simulation},
+#'   \code{Transaction}, \code{Time}, and \code{Belief}.
+#' @param horizon Time horizon (any format accepted by
+#'   \code{\link{auto_time_to_ms}}). If omitted or larger than available
+#'   data, defaults to the maximum time in the dataset.
+#' @param alignTimes Logical; if \code{TRUE}, time-align belief data to
+#'   arrival times (default \code{TRUE}).
+#' @param arrivalTimes A data frame of arrival times (required when
+#'   \code{alignTimes = TRUE}).
+#' @param timeAlignmentOffset Numeric offset in ms (default 0).
+#' @param threshold Numeric belief threshold for counting successes
+#'   (default 0.9).
+#' @param thresTest_p Numeric null-hypothesis proportion for the binomial
+#'   test (default 0.95).
+#' @param alpha Numeric significance level (default 0.05).
+#' @param txVector Optional vector of transaction IDs to filter results.
+#' @return A tibble with per-transaction finality statistics including
+#'   sample mean, SD, trial/success counts, binomial test p-value,
+#'   confidence intervals, and a PASS/FAIL indicator.
+#' @export
 getFinality <- function(
     beliefData,
     horizon,
@@ -651,6 +878,17 @@ getFinality <- function(
 }
 
 
+#' Get time to finality per transaction
+#'
+#' Finds the earliest time at which the average confidence exceeds the
+#' given threshold for each transaction.
+#'
+#' @param graphData A data frame as returned by \code{\link{prepareGraphData}},
+#'   with columns \code{Time}, \code{Transaction}, and \code{avgConf}.
+#' @param threshold Numeric belief threshold.
+#' @return A tibble with columns \code{Transaction} and \code{first_time}
+#'   (formatted as HH:MM:SS.mmm).
+#' @export
 getTimeToFinality <- function(graphData,threshold) {
   result <- graphData %>%
     filter(!is.na(avgConf)) %>%                # ignore NA rows
@@ -663,6 +901,27 @@ getTimeToFinality <- function(graphData,threshold) {
   return(result)
 }
 
+#' Find simulations where belief stays below the threshold
+#'
+#' Identifies individual simulations in which the final belief for a
+#' transaction does not exceed the specified threshold by the end of
+#' the observation horizon.
+#'
+#' @param beliefData A data frame with columns \code{Simulation},
+#'   \code{Transaction}, \code{Time}, and \code{Belief}.
+#' @param horizon Time horizon (any format accepted by
+#'   \code{\link{auto_time_to_ms}}).
+#' @param alignTimes Logical; if \code{TRUE}, time-align to arrival times
+#'   (default \code{TRUE}).
+#' @param arrivalTimes A data frame of arrival times (required when
+#'   \code{alignTimes = TRUE}).
+#' @param timeAlignmentOffset Numeric offset in ms (default 0).
+#' @param threshold Numeric belief threshold (default 0.9).
+#' @param txVector Optional vector of transaction IDs to filter results.
+#' @return A tibble with columns \code{Transaction}, \code{Simulation},
+#'   \code{Time}, and \code{Belief} for the culprit simulation/transaction
+#'   pairs.
+#' @export
 getCulpritSims <- function(
     beliefData,
     horizon,
@@ -709,6 +968,21 @@ getCulpritSims <- function(
 }
 
 
+#' Print human-readable transaction event history
+#'
+#' Combines event log and block log data to produce a chronological,
+#' human-readable narrative of each transaction's lifecycle (arrival,
+#' propagation, validation, chain append) for selected simulations.
+#' Output is printed to the console.
+#'
+#' @param eventData A data frame of event log data (with \code{EventType},
+#'   \code{ObjectID}, \code{SimTime}, \code{NodeID}, \code{SimID} columns).
+#' @param blockData A data frame of block log data (with \code{BlockContent},
+#'   \code{EventType}, \code{SimTime}, \code{NodeID}, \code{SimID} columns).
+#' @param txVector Integer or character vector of transaction IDs to trace.
+#' @param simVector Optional vector of simulation IDs to filter.
+#' @return Called for side effects (prints to console). Returns invisible NULL.
+#' @export
 getTransactionHistory <- function(
     eventData,
     blockData,
@@ -830,6 +1104,19 @@ getTransactionHistory <- function(
 #     output_folder_name = "folderALL",
 #     input_dir = "path/to/results"
 #   )
+#' Concatenate CSV/TXT result files across experiment folders
+#'
+#' Discovers files by prefix in the first directory, then concatenates
+#' matching files from all listed directories (skipping duplicate headers).
+#' Writes combined output to a new folder.
+#'
+#' @param dir_names Character vector of folder names containing result files.
+#' @param output_folder_name Character name for the output folder.
+#' @param input_dir Character path to the parent directory containing
+#'   \code{dir_names}.
+#' @return Called for side effects (writes concatenated files). Returns
+#'   invisible NULL.
+#' @export
 concatenate_results <- function(dir_names, output_folder_name, input_dir) {
   output_dir <- file.path(input_dir, output_folder_name)
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -902,6 +1189,18 @@ concatenate_results <- function(dir_names, output_folder_name, input_dir) {
 # )
 
 
+#' Load all experiment data into a named list
+#'
+#' Reads the block log, event log, input data, and belief log for a given
+#' experiment and returns them bundled together with metadata in a list.
+#'
+#' @param outputFolder Character path to the base results directory.
+#' @param experiment Character name of the experiment.
+#' @param txVector Vector of transaction IDs of interest.
+#' @return A named list with elements: \code{outputFolder}, \code{experiment},
+#'   \code{blockData}, \code{eventData}, \code{inputData}, \code{beliefData},
+#'   and \code{txVector}.
+#' @export
 setVars <- function(outputFolder, experiment, txVector) {
   # Read the CSV files
   blockData <- safe_read_csv(paste0(outputFolder, experiment, "/BlockLog - ", experiment, ".csv"))
@@ -929,6 +1228,14 @@ setVars <- function(outputFolder, experiment, txVector) {
 
 
 
+#' Safely read a CSV file
+#'
+#' Wraps \code{\link[readr]{read_csv}} in a \code{tryCatch} so that file-read
+#' errors return \code{NULL} instead of stopping execution.
+#'
+#' @param path Character file path to the CSV.
+#' @return A tibble if the file is read successfully, or \code{NULL} on error.
+#' @export
 safe_read_csv <- function(path) {
   tryCatch(
     readr::read_csv(path),
