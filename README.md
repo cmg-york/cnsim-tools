@@ -9,8 +9,3 @@ Individual tools are under construction or deprecation, except for those documen
 
 A set of tools for belief and pace analysis of CNSim logs.
 - `library.R`: contains all functions for performing belief and pace analysis of bitcoin data.
-- 
-- `beliefTools.R`: includes scripts for performing belief analysis, according to theory of blockchain finality.
-- `beliefAnalysis-test.qmd`: demonstrates the use of the tools in artificial 
-- `beliefAnalysis-test.qmd`: demonstrates the use of the tools in 
-- 
