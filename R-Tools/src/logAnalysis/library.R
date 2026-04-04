@@ -15,7 +15,8 @@ load_libraries <- function(libs) {
   }
 }
 
-load_libraries(c("tidyverse", "nptest", "knitr", "xtable","TOSTER", "data.table"))
+load_libraries(c("tidyverse", "nptest", "knitr", "xtable",
+                 "TOSTER", "data.table","gridExtra"))
 
 
 #
@@ -664,7 +665,7 @@ prepareGraphData <- function(beliefData, VaR = FALSE,
 #'   and \code{bootGraph} when bootstrap data is present.
 #' @export
 getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include",
-                           xlims,timeUnit = "min",txVector) {
+                           xlims,timeUnit = "min",txVector, titleSuffix = "") {
   
   # Parameter Processing and Validation
   if (!(timeUnit %in% c("min","sec","ms"))) {
@@ -716,16 +717,16 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include"
     p1 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
       geom_line() + 
       facet_wrap(~ Transaction, scales = "free_y") +
-      ylab("Confidence") + 
+      ylab("Belief") + 
       xlab(paste0("Time (",timeUnit,")")) +
       xlim(xlim_min,xlim_max) +
-      ggtitle(label = "Confidence in f over time")
+      ggtitle(label = paste0("Belief over Time",titleSuffix))
   } else {
     p1 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
       geom_line(aes(color = Transaction)) + 
-      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
+      ylab("Belief") + xlab(paste0("Time (",timeUnit,")")) +
       xlim(xlim_min,xlim_max) +
-      ggtitle(label = "Confidence in f over time")
+      ggtitle(label = paste0("Belief over Time",titleSuffix))
   }
   
   
@@ -749,9 +750,9 @@ getBeliefGraph <- function(graphData,threshold, faceted = FALSE, VaR = "include"
   if (rlang::has_name(graphData,"lwr")) {
     p2 <- ggplot(data = graphData, aes(x = Time, y=avgConf, label = avgConf)) + 
       geom_ribbon(aes(ymin=lwr,ymax=upr,fill = "Confidence Interval"),alpha=0.2) + 
-      ylab("Confidence") + xlab(paste0("Time (",timeUnit,")")) +
+      ylab("Belief") + xlab(paste0("Time (",timeUnit,")")) +
       xlim(xlim_min,xlim_max) +
-      ggtitle(label = "Confidence in f over time") +
+      ggtitle(label = paste0("Belief over Time",titleSuffix)) +
       scale_color_manual(name = "Legend", values = c("VaR" = "red")) +
       scale_fill_manual(name = "Legend", values = c("Confidence interval" = "blue")) + 
     if (!missing(threshold)) {
@@ -889,7 +890,7 @@ getFinality <- function(
 #' @return A tibble with columns \code{Transaction} and \code{first_time}
 #'   (formatted as HH:MM:SS.mmm).
 #' @export
-getTimeToFinality <- function(graphData,threshold) {
+getTimeToFinality_deprecated <- function(graphData,threshold) {
   result <- graphData %>%
     filter(!is.na(avgConf)) %>%                # ignore NA rows
     filter(avgConf > threshold) %>%                   # exceed threshold
@@ -900,6 +901,34 @@ getTimeToFinality <- function(graphData,threshold) {
     )
   return(result)
 }
+
+
+
+getTimeToFinality <- function(normalizedData,threshold) {
+  result <- normalizedData %>% 
+    group_by(Transaction) %>%
+    arrange(Time) %>%
+    mutate(ok = avgConf > threshold) %>%
+    mutate(all_after = rev(cumall(rev(ok)))) %>%
+    filter(all_after) %>%
+    summarise(TimeFinalized = min(Time)) %>%
+    mutate(TimeFinalizedFrmt = format_simtime(TimeFinalized))
+  
+  
+  # result <- beliefData %>% 
+  # group_by(Transaction,Time) %>%
+  # summarise(avgBelief = mean(Belief),.groups = "drop_last") %>%
+  # group_by(Transaction) %>%
+  # arrange(Time) %>%
+  # mutate(ok = avgBelief > threshold) %>%
+  # mutate(all_after = rev(cumall(rev(ok)))) %>%
+  # filter(all_after) %>%
+  # summarise(TimeFinalized = min(Time)) %>%
+  # mutate(TimeFinalizedFrmt = format_simtime(TimeFinalized))
+
+  return(result)
+}
+
 
 #' Find simulations where belief stays below the threshold
 #'
@@ -983,7 +1012,7 @@ getCulpritSims <- function(
 #' @param simVector Optional vector of simulation IDs to filter.
 #' @return Called for side effects (prints to console). Returns invisible NULL.
 #' @export
-getTransactionHistory <- function(
+getTransactionHistory_deprecated <- function(
     eventData,
     blockData,
     txVector,
@@ -1058,6 +1087,84 @@ getTransactionHistory <- function(
   
   if (!missing(simVector)) {
     all_out <- all_out %>% filter(SimID %in% simVector)  
+  }
+  
+  
+  for (sim in unique(all_out$SimID)) {
+    
+    cat("Simulation", sim, ":\n")
+    cat(paste0("    HH:MM:SS.mmm\n"))
+    all_out %>%
+      filter(SimID == sim) %>%
+      arrange(Time, Transaction) %>%  # optional: order events
+      rowwise() %>%
+      mutate(
+        line = paste0("    ", format_simtime(Time), ": Transaction ", Transaction, " ", Event)
+      ) %>%
+      pull(line) %>%
+      paste(collapse = "\n") %>%
+      cat("\n")
+    
+    cat("\n")  # extra line between simulations
+  }
+}
+
+
+
+getTransactionHistory <- function(
+    eventData, inputData, txID, simVector) {
+  
+  # Function to map EventType to text
+  event_text <- function(type) {
+    if(type == "Event_NewTransactionArrival") {
+      "(*arrival*) arrives at node"
+    } else if(type == "Event_TransactionPropagation") {
+      "propagates to node"
+    } else if(type == "Event_ContainerValidation") {
+      "(*validation*) appears in a block that was just validated by Node "
+    } else if(type == "Event_ContainerArrival") {
+      "is received in a validated block by Node "
+    } else {
+      type  # fallback
+    }
+  }
+  
+  transaction_events = c("Event_NewTransactionArrival",
+                         "Event_TransactionPropagation")
+  
+  block_events = c("Event_ContainerValidation",
+                   "Event_ContainerArrival")
+  
+  
+  eD <- rbind(
+    eventData %>% filter(ObjectID %in% txID,
+                         EventType %in% transaction_events),
+    eventData %>% filter(
+      EventType %in% block_events,
+      str_detect(Info, paste0("\\b", txID, "\\b"))
+    )
+  )
+  
+  # Combine evidence from input and from event log
+  eD_out <- 
+    bind_rows(
+      inputData %>% filter(TxID == txID) %>% 
+        mutate (Event = paste0("arrives at Node ",NodeID)) %>%
+        select(SimID,Time = ArrivalTime,
+               Transaction = TxID, Event), 
+      eD %>%
+        arrange(SimID, SimTime, EventID) %>%
+        rowwise() %>%
+        mutate(
+          Time = SimTime,
+          Transaction = txID,
+          Event = paste0(event_text(EventType), " ", NodeID)
+        ) %>%
+        ungroup() %>%
+        select(SimID, Time, Transaction, Event))
+  
+  if (!missing(simVector)) {
+    all_out <- eD_out %>% filter(SimID %in% simVector)  
   }
   
   
