@@ -1,4 +1,4 @@
-![CNSim-Bitcoin Logo](src/site/resources/images/logo.png)
+![CNSim-Bitcoin Logo](R-Tools/doc/logo.png)
 
 # Data Analysis Tools for CNSim (cnsim-tools).
 
